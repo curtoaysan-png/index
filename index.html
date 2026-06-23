@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Scorte Banco</title>
+  <style>
+    :root {
+      --ink: #f2e9dc;
+      --ink-dim: #a89e8e;
+      --bg: #1b1714;
+      --surface: #241d19;
+      --surface-2: #2c2420;
+      --gold: #d4a53d;
+      --gold-dim: #8a6e2c;
+      --red: #9b2226;
+      --green: #4f7a3f;
+      --rule: rgba(212, 165, 61, 0.18);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    #app {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Georgia, "Times New Roman", serif;
+      min-height: 100%;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .header {
+      padding: 28px 20px 18px;
+      text-align: center;
+      border-bottom: 1px solid var(--rule);
+      position: relative;
+    }
+
+    .eyebrow {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      letter-spacing: 0.25em;
+      color: var(--gold-dim);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--gold);
+      text-shadow: 0 0 18px rgba(212, 165, 61, 0.25);
+      margin: 0;
+    }
+
+    .subtitle {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      color: var(--ink-dim);
+      margin-top: 8px;
+    }
+
+    .ticket-edge {
+      height: 10px;
+      background-image: radial-gradient(circle at 10px 5px, transparent 5px, var(--bg) 5.5px);
+      background-size: 20px 10px;
+      background-color: var(--surface);
+    }
+
+    .totalbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .totalbar .label {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      color: var(--ink-dim);
+      text-transform: uppercase;
+    }
+
+    .totalbar .count {
+      font-family: 'Courier New', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--red);
+      background: #000;
+      border: 1px solid var(--red);
+      border-radius: 4px;
+      padding: 2px 12px;
+      min-width: 48px;
+      text-align: center;
+    }
+
+    .list {
+      padding: 6px 16px 100px;
+    }
+
+    .category {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      margin: 22px 4px 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .category::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--rule);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      padding: 10px 10px 10px 14px;
+      margin-bottom: 8px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .row.has-qty {
+      border-color: var(--gold-dim);
+      background: var(--surface-2);
+    }
+
+    .row .name {
+      flex: 1;
+      font-size: 15px;
+      color: var(--ink);
+    }
+
+    .row .name .note {
+      display: block;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: var(--ink-dim);
+      margin-top: 2px;
+    }
+
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: #000;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .stepper button {
+      width: 38px;
+      height: 38px;
+      background: transparent;
+      border: none;
+      color: var(--gold);
+      font-size: 18px;
+      font-family: Georgia, serif;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .stepper button:active {
+      background: rgba(212, 165, 61, 0.18);
+    }
+
+    .stepper button.minus {
+      color: var(--ink-dim);
+    }
+
+    .stepper .qty {
+      width: 40px;
+      text-align: center;
+      font-family: 'Courier New', monospace;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .row.has-qty .stepper .qty {
+      color: var(--red);
+    }
+
+    .remove-btn {
+      background: none;
+      border: none;
+      color: var(--ink-dim);
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px 6px;
+      line-height: 1;
+    }
+
+    .add-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .add-row input {
+      flex: 1;
+      background: #000;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--ink);
+      font-family: Georgia, serif;
+      font-size: 14px;
+    }
+
+    .add-row input::placeholder {
+      color: var(--ink-dim);
+    }
+
+    .add-row select {
+      background: #000;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      color: var(--ink-dim);
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      padding: 0 8px;
+    }
+
+    .add-row button {
+      background: var(--gold-dim);
+      color: #1b1714;
+      border: none;
+      border-radius: 6px;
+      padding: 0 16px;
+      font-family: 'Courier New', monospace;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+    }
+
+    .footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--surface);
+      border-top: 1px solid var(--rule);
+    }
+
+    .footer button {
+      flex: 1;
+      padding: 13px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--rule);
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .btn-copy {
+      background: var(--gold);
+      color: #1b1714;
+      border: none;
+      font-weight: 700;
+    }
+
+    .btn-reset {
+      background: transparent;
+      color: var(--red);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 74px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--gold);
+      color: #1b1714;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-6px);
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--ink-dim);
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      padding: 30px 10px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      .row,
+      .toast {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app"></div>
+  <script>
+    (function () {
+      const DEFAULT_ITEMS = [
+        { id: "p1", cat: "Altro", name: "Maltese" },
+        { id: "p2", cat: "M&M", name: "M&m gialle" },
+        { id: "p3", cat: "M&M", name: "M&m blu" },
+        { id: "p4", cat: "M&M", name: "M&m marroni" },
+        { id: "p5", cat: "M&M", name: "M&m gialle" },
+        { id: "p6", cat: "M&M", name: "M&m Verdi" },
+        { id: "p7", cat: "Lays", name: "Lays classiche" },
+        { id: "p8", cat: "Lays", name: "Lays cipollotti" },
+        { id: "p9", cat: "Lays", name: "Lays bbq" },
+        { id: "p10", cat: "Lays", name: "Lays campagnole" },
+        { id: "p11", cat: "Lays", name: "Lays paprika dolce" },
+        { id: "p12", cat: "Lays", name: "Lays mondiali" },
+        { id: "p13", cat: "Maxx", name: "Maxx classiche" },
+        { id: "p14", cat: "Maxx", name: "Maxx formaggio" },
+        { id: "p15", cat: "Maxx", name: "Maxx piccante" },
+        { id: "p16", cat: "Skittles", name: "Skittles rosse" },
+        { id: "p17", cat: "Skittles", name: "Skittles Verdi" },
+        { id: "p18", cat: "Skittles", name: "Skittles blu" },
+        { id: "p19", cat: "Skittles", name: "Skittles Verdi gommosi" },
+        { id: "p20", cat: "Skittles", name: "Skittles blu gommosi" }
+      ];
+      const CATS = ["Altro", "M&M", "Lays", "Maxx", "Skittles"];
+      const STORAGE_KEY = "scorte-banco-v1";
+      let state = { items: [], qty: {} };
+
+      function defaultState() {
+        const items = DEFAULT_ITEMS.slice();
+        const qty = {};
+        items.forEach(i => qty[i.id] = 0);
+        return { items, qty };
+      }
+
+      function load() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.items)) {
+              state = parsed;
+              return;
+            }
+          }
+        } catch (e) { /* nessun dato salvato ancora o non leggibile */ }
+        state = defaultState();
+      }
+
+      function scheduleSave() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) { console.error("Salvataggio non riuscito", e); }
+      }
+
+      function showToast(msg) {
+        const t = document.getElementById("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(t._hideTimer);
+        t._hideTimer = setTimeout(() => t.classList.remove("show"), 1600);
+      }
+
+      function groupByCategory() {
+        const groups = {};
+        CATS.forEach(c => groups[c] = []);
+        state.items.forEach(item => {
+          if (!groups[item.cat]) groups[item.cat] = [];
+          groups[item.cat].push(item);
+        });
+        return groups;
+      }
+
+      function totalMissing() {
+        return Object.values(state.qty).reduce((a, b) => a + (b || 0), 0);
+      }
+
+      function render() {
+        const app = document.getElementById("app");
+        const groups = groupByCategory();
+        const total = totalMissing();
+
+        let rowsHtml = "";
+        let anyItem = false;
+        CATS.forEach(cat => {
+          const items = groups[cat] || [];
+          if (items.length === 0) return;
+          anyItem = true;
+          rowsHtml += `<div class="category">${cat}</div>`;
+          items.forEach(item => {
+            const q = state.qty[item.id] || 0;
+            rowsHtml += `
+          <div class="row ${q > 0 ? 'has-qty' : ''}" data-id="${item.id}">
+            <div class="name">${item.name}</div>
+            <div class="stepper">
+              <button class="minus" data-action="minus" data-id="${item.id}" aria-label="Togli uno">−</button>
+              <div class="qty">${q}</div>
+              <button class="plus" data-action="plus" data-id="${item.id}" aria-label="Aggiungi uno">+</button>
+            </div>
+            <button class="remove-btn" data-action="remove" data-id="${item.id}" aria-label="Rimuovi prodotto">✕</button>
+          </div>`;
+          });
+        });
+
+        if (!anyItem) {
+          rowsHtml = `<div class="empty">Nessun prodotto in lista.<br>Aggiungine uno qui sotto.</div>`;
+        }
+
+        app.innerHTML = `
+      <div class="header">
+        <div class="eyebrow">Sala Banco · Foglio Scorte</div>
+        <h1 class="title">Cosa manca oggi</h1>
+        <div class="subtitle">Tocca “+” ad ogni mancanza riscontrata</div>
+      </div>
+      <div class="ticket-edge"></div>
+      <div class="totalbar">
+        <div class="label">Pezzi mancanti totali</div>
+        <div class="count">${total}</div>
+      </div>
+      <div class="list">
+        ${rowsHtml}
+        <div class="add-row">
+          <input id="new-name" type="text" placeholder="Nuovo prodotto…" />
+          <select id="new-cat">
+            ${CATS.map(c => `<option value="${c}">${c}</option>`).join("")}
+          </select>
+          <button id="add-btn" type="button">Aggiungi</button>
+        </div>
+      </div>
+      <div class="footer">
+        <button class="btn-copy" id="copy-btn" type="button">Copia lista da ordinare</button>
+        <button class="btn-reset" id="reset-btn" type="button">Azzera tutto</button>
+      </div>
+      <div class="toast" id="toast"></div>
+    `;
+
+        app.querySelectorAll('[data-action="plus"]').forEach(btn => {
+          btn.addEventListener("click", () => {
+            const id = btn.dataset.id;
+            state.qty[id] = (state.qty[id] || 0) + 1;
+            scheduleSave();
+            render();
+          });
+        });
+        app.querySelectorAll('[data-action="minus"]').forEach(btn => {
+          btn.addEventListener("click", () => {
+            const id = btn.dataset.id;
+            state.qty[id] = Math.max(0, (state.qty[id] || 0) - 1);
+            scheduleSave();
+            render();
+          });
+        });
+        app.querySelectorAll('[data-action="remove"]').forEach(btn => {
+          btn.addEventListener("click", () => {
+            const id = btn.dataset.id;
+            if (!confirm("Rimuovere questo prodotto dalla lista?")) return;
+            state.items = state.items.filter(i => i.id !== id);
+            delete state.qty[id];
+            scheduleSave();
+            render();
+          });
+        });
+
+        document.getElementById("add-btn").addEventListener("click", () => {
+          const input = document.getElementById("new-name");
+          const select = document.getElementById("new-cat");
+          const name = input.value.trim();
+          if (!name) return;
+          const id = "p" + Date.now();
+          state.items.push({ id, cat: select.value, name });
+          state.qty[id] = 0;
+          scheduleSave();
+          render();
+        });
+        document.getElementById("new-name").addEventListener("keydown", (e) => {
+          if (e.key === "Enter") document.getElementById("add-btn").click();
+        });
+
+        document.getElementById("copy-btn").addEventListener("click", async () => {
+          const lines = [];
+          state.items.forEach(item => {
+            const q = state.qty[item.id] || 0;
+            if (q > 0) lines.push(`${item.name}: ${q}`);
+          });
+          const text = lines.length ? lines.join("\n") : "Nessun prodotto mancante al momento.";
+          try {
+            await navigator.clipboard.writeText(text);
+            showToast("Lista copiata ✓");
+          } catch (e) {
+            showToast("Copia non riuscita");
+          }
+        });
+
+        document.getElementById("reset-btn").addEventListener("click", () => {
+          if (!confirm("Azzerare tutte le quantità mancanti?")) return;
+          Object.keys(state.qty).forEach(id => state.qty[id] = 0);
+          scheduleSave();
+          render();
+        });
+      }
+
+      load();
+      render();
+    })();
+  </script>
+</body>
+
+</html>
