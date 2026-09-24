@@ -159,6 +159,24 @@
 
     .source { font-size: 12px; color: var(--ink-dim); margin-top: 14px; }
 
+    .fixed-row, .add-cat-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .fixed-row input.fx-name, .add-cat-row #new-cat-name { flex: 1; min-width: 0; }
+    .fixed-row input.fx-amount, .add-cat-row #new-cat-amount { width: 100px; text-align: right; }
+    .add-cat-row select { width: auto; flex: 0 1 180px; min-width: 0; }
+    @media (max-width: 520px) {
+      .add-cat-row { flex-wrap: wrap; }
+      .add-cat-row #new-cat-name { flex-basis: 100%; }
+      .add-cat-row select { flex: 1; }
+    }
+
+    button.small { font-size: 14px; padding: 8px 12px; }
+    button.icon { padding: 6px 10px; background: transparent; color: var(--ink-dim); }
+
+    .add-cat { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--rule); }
+    .add-cat-title { font-size: 13px; color: var(--ink-dim); margin-bottom: 8px; }
+
+    .cat .remove { padding: 2px 6px; border: none; background: transparent; color: var(--ink-dim); font-size: 14px; }
+
     .hidden { display: none; }
   </style>
 </head>
@@ -192,6 +210,11 @@
         <div>
           <label for="people">Persone in famiglia</label>
           <input id="people" type="number" inputmode="numeric" min="1" value="1">
+        </div>
+        <div class="full">
+          <label>Altri costi fissi mensili (assicurazioni, palestra, telefono, asilo…)</label>
+          <div id="fixed-list"></div>
+          <button type="button" id="add-fixed" class="small">+ Aggiungi costo fisso</button>
         </div>
         <div class="full">
           <label for="goal">Obiettivo di risparmio o note (facoltativo)</label>
@@ -228,6 +251,19 @@
       </div>
       <div class="bar" id="bar" aria-hidden="true"></div>
       <div id="groups"></div>
+      <div class="add-cat">
+        <div class="add-cat-title">Aggiungi una categoria</div>
+        <div class="add-cat-row">
+          <input id="new-cat-name" type="text" placeholder="Nome (es. Assicurazione auto)" aria-label="Nome categoria">
+          <select id="new-cat-group" aria-label="Gruppo">
+            <option value="necessita">Necessità / costo fisso</option>
+            <option value="desideri">Desideri</option>
+            <option value="risparmio">Risparmio</option>
+          </select>
+          <input id="new-cat-amount" type="number" inputmode="decimal" min="0" step="5" placeholder="€" aria-label="Importo">
+          <button type="button" id="add-cat-btn">Aggiungi</button>
+        </div>
+      </div>
       <div class="unassigned" id="unassigned"></div>
       <div class="source" id="source"></div>
     </section>
@@ -269,9 +305,37 @@
           bills: num("bills"),
           debt: num("debt"),
           people: Math.max(1, Math.round(num("people")) || 1),
-          goal: $("goal").value.trim()
+          goal: $("goal").value.trim(),
+          fixed: readFixed()
         };
       }
+
+      // ---- Costi fissi personalizzati ----
+      function addFixedRow(name, amount) {
+        const row = document.createElement("div");
+        row.className = "fixed-row";
+        row.innerHTML = `
+          <input class="fx-name" type="text" placeholder="Nome (es. Palestra)" aria-label="Nome costo fisso">
+          <input class="fx-amount" type="number" inputmode="decimal" min="0" placeholder="€" aria-label="Importo costo fisso">
+          <button type="button" class="icon" aria-label="Rimuovi costo fisso">✕</button>`;
+        row.querySelector(".fx-name").value = name || "";
+        row.querySelector(".fx-amount").value = amount || "";
+        row.querySelector("button").addEventListener("click", () => { row.remove(); save(); });
+        $("fixed-list").appendChild(row);
+        return row;
+      }
+
+      function readFixed() {
+        return Array.from(document.querySelectorAll("#fixed-list .fixed-row"))
+          .map(r => ({
+            name: r.querySelector(".fx-name").value.trim(),
+            amount: Math.max(0, parseFloat(r.querySelector(".fx-amount").value) || 0)
+          }))
+          .filter(f => f.name && f.amount > 0);
+      }
+
+      $("add-fixed").addEventListener("click", () => addFixedRow().querySelector(".fx-name").focus());
+      $("fixed-list").addEventListener("change", save);
 
       function save() {
         try {
@@ -288,6 +352,7 @@
             ["income", "rent", "bills", "debt", "people", "goal"].forEach(k => {
               if (i[k] !== undefined && i[k] !== 0 && i[k] !== "") $(k).value = i[k];
             });
+            (i.fixed || []).forEach(f => addFixedRow(f.name, f.amount));
             if (data.plan && Array.isArray(data.plan.categories)) plan = data.plan;
           }
           $("apikey").value = localStorage.getItem(KEY_STORAGE) || "";
@@ -305,25 +370,30 @@
         const I = d.income;
         const r = x => Math.round(x / 5) * 5;
         const cats = [];
-        const add = (name, group, amount, tip) => { if (amount > 0) cats.push({ name, group, amount: r(amount), tip }); };
+        // exact = importo inserito dall'utente, da non arrotondare
+        const add = (name, group, amount, tip, exact) => {
+          if (amount > 0) cats.push({ name, group, amount: exact ? Math.round(amount) : r(amount), tip });
+        };
 
         const bills = d.bills || Math.min(I * 0.07, 90 + 40 * d.people);
         const food = Math.min(Math.max(200 * d.people, I * 0.10), I * 0.20);
         const transport = I * 0.06;
         const health = I * 0.03;
-        let needs = d.rent + bills + d.debt + food + transport + health;
+        const fixed = d.rent + bills + d.debt + d.fixed.reduce((a, f) => a + f.amount, 0);
+        const variable = food + transport + health;
+        let needs = fixed + variable;
 
         // Se le necessità superano il 90% dello stipendio, riduci le voci variabili
         let scale = 1;
-        const variable = food + transport + health;
         if (needs > I * 0.9 && variable > 0) {
-          scale = Math.max(0.5, (I * 0.9 - d.rent - bills - d.debt) / variable);
-          needs = d.rent + bills + d.debt + variable * scale;
+          scale = Math.max(0.5, (I * 0.9 - fixed) / variable);
+          needs = fixed + variable * scale;
         }
 
-        add("Casa (affitto/mutuo)", "necessita", d.rent, "Idealmente non più del 30% dello stipendio.");
-        add("Bollette e utenze", "necessita", bills, "Confronta le offerte luce e gas una volta l'anno.");
-        add("Rate e debiti", "necessita", d.debt, "Estingui prima i debiti con il tasso più alto.");
+        add("Casa (affitto/mutuo)", "necessita", d.rent, "Idealmente non più del 30% dello stipendio.", true);
+        add("Bollette e utenze", "necessita", bills, "Confronta le offerte luce e gas una volta l'anno.", !!d.bills);
+        add("Rate e debiti", "necessita", d.debt, "Estingui prima i debiti con il tasso più alto.", true);
+        d.fixed.forEach(f => add(f.name, "necessita", f.amount, "Costo fisso inserito da te: verifica se puoi rinegoziarlo.", true));
         add("Spesa alimentare", "necessita", food * scale, "Fai la lista e pianifica i pasti della settimana.");
         add("Trasporti", "necessita", transport * scale, "Valuta abbonamenti ai mezzi o car pooling.");
         add("Salute e cura personale", "necessita", health * scale, "Tieni da parte qualcosa per visite e farmaci.");
@@ -410,12 +480,14 @@
           `- Affitto/mutuo: ${d.rent} €\n` +
           `- Bollette e utenze: ${d.bills ? d.bills + " €" : "non indicate, stimale tu"}\n` +
           `- Rate/debiti mensili: ${d.debt} €\n` +
+          `- Altri costi fissi mensili: ${d.fixed.length ? d.fixed.map(f => `${f.name} ${f.amount} €`).join("; ") : "nessuno"}\n` +
           `- Persone in famiglia: ${d.people}\n` +
           `- Obiettivi e note: ${d.goal || "nessuno"}\n\n` +
           `Regole:\n` +
           `- Rispondi in italiano.\n` +
           `- Usa tra 8 e 14 categorie, ognuna con gruppo "necessita", "desideri" o "risparmio".\n` +
-          `- Gli importi fissi indicati (affitto, bollette se date, rate) vanno riportati esattamente.\n` +
+          `- Gli importi fissi indicati (affitto, bollette se date, rate, altri costi fissi) vanno riportati esattamente, ` +
+          `ognuno come categoria "necessita" separata con lo stesso nome indicato.\n` +
           `- La somma degli importi deve essere esattamente ${d.income} €. Arrotonda gli importi ai 5 €.\n` +
           `- Se ci sono obiettivi, crea una categoria di risparmio dedicata con un importo che li renda raggiungibili, ` +
           `se possibile.\n` +
@@ -512,6 +584,7 @@
                 <div class="cat-pct">${pct(c.amount)}%</div>
                 <input class="amount" type="number" inputmode="decimal" min="0" step="5" value="${c.amount}"
                   data-i="${i}" data-field="amount" aria-label="Importo per ${escapeHtml(c.name)}">
+                <button type="button" class="remove" data-remove="${i}" aria-label="Rimuovi ${escapeHtml(c.name)}">✕</button>
               </div>
               ${c.tip ? `<div class="tip">${escapeHtml(c.tip)}</div>` : ""}
               <div class="spent-row">
@@ -551,6 +624,34 @@
         render();
       });
 
+      $("groups").addEventListener("click", e => {
+        const btn = e.target.closest("[data-remove]");
+        if (!btn) return;
+        const c = plan.categories[+btn.dataset.remove];
+        if (!confirm(`Rimuovere la categoria "${c.name}"?`)) return;
+        plan.categories.splice(+btn.dataset.remove, 1);
+        save();
+        render();
+      });
+
+      $("add-cat-btn").addEventListener("click", () => {
+        const name = $("new-cat-name").value.trim();
+        if (!name) { $("new-cat-name").focus(); return; }
+        plan.categories.push({
+          name,
+          group: $("new-cat-group").value,
+          amount: Math.max(0, parseFloat($("new-cat-amount").value) || 0),
+          tip: ""
+        });
+        $("new-cat-name").value = "";
+        $("new-cat-amount").value = "";
+        save();
+        render();
+      });
+      ["new-cat-name", "new-cat-amount"].forEach(id => $(id).addEventListener("keydown", e => {
+        if (e.key === "Enter") $("add-cat-btn").click();
+      }));
+
       $("go").addEventListener("click", async () => {
         const d = readInputs();
         if (d.income <= 0) { setStatus("Inserisci il tuo stipendio mensile.", true); $("income").focus(); return; }
@@ -586,6 +687,7 @@
         if (!confirm("Cancellare dati e piano?")) return;
         ["income", "rent", "bills", "debt", "goal"].forEach(k => $(k).value = "");
         $("people").value = 1;
+        $("fixed-list").innerHTML = "";
         plan = null;
         save();
         render();
