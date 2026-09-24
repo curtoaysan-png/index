@@ -266,6 +266,7 @@
 
     /* ---- Entrate ---- */
     #inc-month { text-transform: capitalize; }
+    #salary-month { text-transform: lowercase; }
     .extra-box { margin-top: 16px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--save) 10%, transparent); border: 1px solid color-mix(in srgb, var(--save) 30%, transparent); }
     .extra-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
     .extra-total { color: var(--save); font-size: 18px; font-variant-numeric: tabular-nums; }
@@ -446,9 +447,10 @@
     <section class="card" id="income-card">
       <h2>Entrate · <span id="inc-month"></span></h2>
       <div class="setting-row" style="margin-top:0">
-        <label for="salary">Stipendio netto mensile (fisso)</label>
+        <label for="salary">Stipendio netto di <span id="salary-month"></span></label>
         <input id="salary" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00">
       </div>
+      <p class="hint" id="salary-hint" style="margin-top:4px"></p>
 
       <div class="extra-box">
         <div class="extra-head">
@@ -1287,7 +1289,7 @@
       const DEFAULT_CATS = ["Cibo fuori", "Benzina", "Spesa", "Trasporti", "Svago", "Shopping", "Altro"];
       const eur2 = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
 
-      // log = { weeklyCap, salary, fixedCosts:[{id, name, amount}], fixedPaid:{"YYYY-MM":[id]}, incomes:[{id, date, amount, note, created}], categories:[{id, name, cap?}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
+      // log = { weeklyCap, salaries:{"YYYY-MM":importo}, fixedCosts:[{id, name, amount}], fixedPaid:{"YYYY-MM":[id]}, incomes:[{id, date, amount, note, created}], categories:[{id, name, cap?}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
       let log = defaultLog();
       let logMonth = null;   // "YYYY-MM" visualizzato nell'elenco
       let editingId = null;  // id della spesa in modifica
@@ -1297,7 +1299,7 @@
       }
 
       function defaultLog() {
-        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [], weeklyCap: DEFAULT_WEEKLY_CAP, salary: 0, incomes: [], fixedCosts: null, fixedPaid: {} };
+        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [], weeklyCap: DEFAULT_WEEKLY_CAP, salaries: {}, incomes: [], fixedCosts: null, fixedPaid: {} };
       }
 
       function todayISO() {
@@ -1315,7 +1317,7 @@
               categories: data.categories.filter(c => c && c.id && c.name),
               expenses: data.expenses.filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.amount > 0),
               weeklyCap: data.weeklyCap > 0 ? data.weeklyCap : DEFAULT_WEEKLY_CAP,
-              salary: data.salary > 0 ? data.salary : 0,
+              salaries: cleanSalaries(data.salaries),
               fixedCosts: Array.isArray(data.fixedCosts)
                 ? data.fixedCosts.filter(f => f && f.id && f.name && f.amount > 0)
                 : null,
@@ -1325,8 +1327,32 @@
                 : []
             };
             if (log.categories.length === 0) log.categories = defaultLog().categories;
+            // Versione precedente: un solo stipendio per tutti i mesi
+            if (Object.keys(log.salaries).length === 0 && data.salary > 0) log.salaries[firstDataMonth(log)] = data.salary;
           }
         } catch (e) { /* storage vuoto o non leggibile: si parte dai default */ }
+      }
+
+      // Stipendio per mese: { "YYYY-MM": importo }
+      function cleanSalaries(obj) {
+        const out = {};
+        if (obj && typeof obj === "object") {
+          Object.keys(obj).forEach(m => { if (/^\d{4}-\d{2}$/.test(m) && obj[m] > 0) out[m] = obj[m]; });
+        }
+        return out;
+      }
+
+      // Stipendio di un mese: quello impostato per il mese, altrimenti l'ultimo impostato prima.
+      // Un mese non prende mai lo stipendio di un mese successivo.
+      function salaryFor(m) {
+        const before = Object.keys(log.salaries).filter(x => x <= m).sort();
+        return before.length ? log.salaries[before[before.length - 1]] : 0;
+      }
+
+      // Primo mese con dati registrati (per assegnare lo stipendio unico delle versioni precedenti)
+      function firstDataMonth(l) {
+        const months = [...(l.expenses || []), ...(l.incomes || [])].map(e => e.date.slice(0, 7));
+        return months.reduce((a, m) => (m < a ? m : a), todayISO().slice(0, 7));
       }
 
       function saveLog() {
@@ -1626,7 +1652,8 @@
         const avg = done.length ? done.reduce((a, x) => a + x.total, 0) / done.length : null;
         const round5 = x => Math.max(5, Math.round(x / 5) * 5);
         // Dopo i costi fissi, almeno il 20% dello stipendio va nel risparmio
-        const sustainable = log.salary > 0 ? round5(Math.max(0, log.salary - fixed - log.salary * 0.2) * 12 / 52) : null;
+        const salary = salaryFor(todayISO().slice(0, 7));
+        const sustainable = salary > 0 ? round5(Math.max(0, salary - fixed - salary * 0.2) * 12 / 52) : null;
         let cap, reason;
         if (avg !== null && avg > 0) {
           cap = round5(avg * 0.9);
@@ -1673,7 +1700,7 @@
           `variabili (cibo fuori, benzina, spesa, svago, shopping…), con l'obiettivo di aiutarla a risparmiare ` +
           `restando realistico rispetto alle sue abitudini. La settimana va da lunedì a domenica.\n\n` +
           `Dati:\n` +
-          `- Stipendio netto mensile: ${log.salary ? log.salary + " €" : "non indicato"}\n` +
+          `- Stipendio netto di questo mese: ${salaryFor(month) ? salaryFor(month) + " €" : "non indicato"}\n` +
           `- Vive con la famiglia: non paga affitto né bollette.\n` +
           `- Costi fissi mensili (esclusi dal tetto): ` +
           (log.fixedCosts.length ? log.fixedCosts.map(f => `${f.name} ${f.amount} €`).join("; ") : "nessuno") + `\n` +
@@ -1778,7 +1805,13 @@
 
       function renderIncome() {
         $("inc-month").textContent = monthLabelLong(logMonth);
-        if (document.activeElement !== $("salary")) $("salary").value = fmtInput(log.salary);
+        $("salary-month").textContent = monthLabelLong(logMonth);
+        const own = log.salaries[logMonth];
+        if (document.activeElement !== $("salary")) $("salary").value = fmtInput(salaryFor(logMonth));
+        const prevSet = Object.keys(log.salaries).filter(m => m < logMonth).sort().pop();
+        $("salary-hint").textContent = own ? "Impostato per questo mese."
+          : prevSet ? `Uguale a ${monthLabelLong(prevSet)}: cambialo se questo mese è diverso.`
+          : "Vale anche per i mesi successivi finché non lo cambi.";
 
         const items = log.incomes
           .filter(e => e.date.slice(0, 7) === logMonth)
@@ -1812,8 +1845,10 @@
       }
 
       $("salary").addEventListener("change", () => {
-        log.salary = parseAmount($("salary").value);
-        $("salary").value = fmtInput(log.salary);
+        const v = parseAmount($("salary").value);
+        // Campo vuoto: il mese torna a usare lo stipendio del mese precedente
+        if (v) log.salaries[logMonth] = v; else delete log.salaries[logMonth];
+        $("salary").value = fmtInput(salaryFor(logMonth));
         saveLog();
         renderLog();
       });
@@ -1966,8 +2001,9 @@
         const variable = expenses.reduce((a, e) => a + e.amount, 0);
         const byCat = new Map();
         expenses.forEach(e => byCat.set(e.catId, (byCat.get(e.catId) || 0) + e.amount));
-        const income = log.salary + extra;
-        return { salary: log.salary, extra, income, fixed, fixedPaid, variable, rest: income - fixed - variable, byCat, count: expenses.length };
+        const salary = salaryFor(m);
+        const income = salary + extra;
+        return { salary, extra, income, fixed, fixedPaid, variable, rest: income - fixed - variable, byCat, count: expenses.length };
       }
 
       // Differenza rispetto al mese precedente; per le spese "su" è negativo (rosso)
@@ -2004,7 +2040,7 @@
           <span>Resta${cur.extra ? `<span class="s-sub">di cui ${eur2.format(Math.min(cur.extra, Math.max(cur.rest, 0)))} di extra da mettere da parte</span>` : ""}</span>
           <span class="s-val">${eur2.format(cur.rest)}${prev ? `<br>${deltaHtml(cur.rest, prev.rest, false)}` : ""}</span></div>`;
         html += `</div>`;
-        if (!log.salary) html += `<p class="hint">Imposta lo stipendio nella sezione Entrate per vedere quanto ti resta.</p>`;
+        if (!cur.salary) html += `<p class="hint">Imposta lo stipendio nella sezione Entrate per vedere quanto ti resta.</p>`;
 
         // Totale per categoria, con confronto sul mese precedente
         const cats = log.categories.map(c => ({ c, v: cur.byCat.get(c.id) || 0, p: prev ? (prev.byCat.get(c.id) || 0) : null }))
@@ -2040,7 +2076,7 @@
       function buildCsv() {
         const rows = [CSV_HEAD];
         rows.push(["impostazione", "", csvNum(log.weeklyCap), "tetto_settimanale", "", ""]);
-        rows.push(["impostazione", "", csvNum(log.salary), "stipendio", "", ""]);
+        Object.keys(log.salaries).sort().forEach(m => rows.push(["stipendio", m, csvNum(log.salaries[m]), "", "", ""]));
         log.categories.forEach(c => rows.push(["categoria", "", csvNum(c.cap), c.name, "", ""]));
         log.fixedCosts.forEach(f => {
           const months = Object.keys(log.fixedPaid).filter(m => (log.fixedPaid[m] || []).includes(f.id)).sort();
@@ -2083,7 +2119,8 @@
           throw new Error("Il file non sembra un backup di Budget Smart.");
         }
         const next = { categories: [], expenses: [], incomes: [], fixedCosts: [], fixedPaid: {},
-          weeklyCap: DEFAULT_WEEKLY_CAP, salary: 0 };
+          weeklyCap: DEFAULT_WEEKLY_CAP, salaries: {} };
+        let legacySalary = 0;
         const catByName = new Map();
         const getCat = name => {
           const key = name.toLowerCase();
@@ -2102,8 +2139,12 @@
           switch (tipo.toLowerCase()) {
             case "impostazione":
               if (nome === "tetto_settimanale" && amount) next.weeklyCap = amount;
-              else if (nome === "stipendio") next.salary = amount;
+              else if (nome === "stipendio") legacySalary = amount;
               else skipped++;
+              break;
+            case "stipendio":
+              if (!/^\d{4}-\d{2}/.test(data) || !amount) { skipped++; break; }
+              next.salaries[data.slice(0, 7)] = amount;
               break;
             case "categoria":
               if (!nome) { skipped++; break; }
@@ -2129,6 +2170,7 @@
           }
         });
         if (next.categories.length === 0) next.categories = defaultLog().categories;
+        if (Object.keys(next.salaries).length === 0 && legacySalary) next.salaries[firstDataMonth(next)] = legacySalary;
         return { next, skipped };
       }
 
@@ -2187,10 +2229,10 @@
         } catch (e) { /* nessun dato */ }
       }
       // Prima volta: usa lo stipendio già inserito nel pianificatore, se c'è
-      if (!log.salary) {
+      if (Object.keys(log.salaries).length === 0) {
         try {
           const old = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-          if (old && old.inputs && old.inputs.income > 0) log.salary = old.inputs.income;
+          if (old && old.inputs && old.inputs.income > 0) log.salaries[firstDataMonth(log)] = old.inputs.income;
         } catch (e) { /* nessun dato */ }
       }
       resetIncomeForm();
@@ -2205,7 +2247,7 @@
         try { localStorage.setItem("budget-smart-planner-open", $("planner").open ? "1" : "0"); } catch (e) { /* ignora */ }
       });
       // Lo stipendio del registro precompila quello del pianificatore
-      if (!$("income").value && log.salary) $("income").value = log.salary;
+      if (!$("income").value && salaryFor(todayISO().slice(0, 7))) $("income").value = salaryFor(todayISO().slice(0, 7));
 
       load();
       render();
