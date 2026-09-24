@@ -75,3 +75,82 @@ def test_catena_giorni():
     assert catena[-1] == (OGGI, True)
     assert catena[-4] == (OGGI - timedelta(days=3), True)
     assert sum(p for _, p in catena) == 2
+
+
+# ---------------------------------------------------------------- calendario
+
+def imp(id_, inizio, fine, tipo="turno", ricorrenza="nessuna", ricorrenza_fine=None, origine="manuale"):
+    return {"id": id_, "titolo": f"imp{id_}", "tipo": tipo, "inizio": inizio, "fine": fine,
+            "ricorrenza": ricorrenza, "ricorrenza_fine": ricorrenza_fine, "origine": origine,
+            "fisso": 0 if tipo == "blocco di lavoro" else 1, "fronte_id": None}
+
+
+def test_turno_settimanale_fino_alla_data_di_fine():
+    turno = imp(1, "2026-09-02T17:00:00", "2026-09-02T22:00:00", ricorrenza="settimanale",
+                ricorrenza_fine="2026-10-21")
+    occ = logica.espandi_impegni([turno], date(2026, 9, 1), date(2026, 12, 31))
+    giorni = [o["inizio_dt"].date() for o in occ]
+    assert giorni[0] == date(2026, 9, 2)
+    assert giorni[-1] == date(2026, 10, 21)
+    assert len(giorni) == 8  # tutti i mercoledì dal 2/9 al 21/10
+    # compare in ogni settimana successiva fino alla fine
+    for sett in range(8):
+        lun = date(2026, 8, 31) + timedelta(weeks=sett)
+        assert len(logica.espandi_impegni([turno], lun, lun + timedelta(days=7))) == 1
+    assert logica.espandi_impegni([turno], date(2026, 10, 26), date(2026, 11, 2)) == []
+
+
+def test_settimanale_senza_fine_e_prima_dell_inizio():
+    lezione = imp(2, "2026-09-07T10:00:00", "2026-09-07T12:00:00", "lezione", "settimanale")
+    assert len(logica.espandi_impegni([lezione], date(2027, 3, 1), date(2027, 3, 8))) == 1
+    assert logica.espandi_impegni([lezione], date(2026, 8, 31), date(2026, 9, 7)) == []
+
+
+def test_fasce_libere_e_riepilogo():
+    lun = date(2026, 9, 21)
+    impegni = [imp(1, "2026-09-21T09:00:00", "2026-09-21T13:00:00"),
+               imp(2, "2026-09-21T15:00:00", "2026-09-21T16:30:00", tipo="blocco di lavoro")]
+    occ = logica.espandi_impegni(impegni, lun, lun + timedelta(days=7))
+    libere = logica.fasce_libere([o for o in occ if o["fisso"]], lun, ora_inizio=8, ora_fine=22)
+    assert libere[lun] == [(datetime(2026, 9, 21, 8), datetime(2026, 9, 21, 9)),
+                           (datetime(2026, 9, 21, 13), datetime(2026, 9, 21, 22))]
+    r = logica.riepilogo_settimana(occ, [], lun)
+    assert r["ore_fisse"] == 4
+    assert r["ore_blocchi"] == 1.5
+    assert r["ore_libere"] == 7 * 14 - 4
+
+
+ICS = b"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//test//
+BEGIN:VEVENT
+UID:1
+SUMMARY:Turno bar
+DTSTART:20260922T170000
+DTEND:20260922T220000
+RRULE:FREQ=WEEKLY;COUNT=3
+END:VEVENT
+BEGIN:VEVENT
+UID:2
+SUMMARY:Compleanno
+DTSTART;VALUE=DATE:20260923
+DTEND;VALUE=DATE:20260924
+END:VEVENT
+BEGIN:VEVENT
+UID:3
+SUMMARY:Lezione storia
+DTSTART:20260924T100000
+DTEND:20260924T120000
+END:VEVENT
+END:VCALENDAR
+"""
+
+
+def test_eventi_da_ical():
+    ev = logica.eventi_da_ical(ICS, date(2026, 9, 21), date(2026, 9, 28))
+    assert [(e["titolo"], e["tipo"], e["inizio"]) for e in ev] == [
+        ("Turno bar", "turno", "2026-09-22T17:00:00"),
+        ("Lezione storia", "lezione", "2026-09-24T10:00:00"),
+    ]
+    # la ricorrenza compare anche nella settimana successiva
+    assert len(logica.eventi_da_ical(ICS, date(2026, 9, 28), date(2026, 10, 5))) == 1

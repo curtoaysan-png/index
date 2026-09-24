@@ -5,6 +5,7 @@ import streamlit as st
 
 import db
 import logica
+from componenti import mostra_agenda_oggi
 from logica import num
 
 conn = db.connetti()
@@ -12,7 +13,7 @@ conn = db.connetti()
 
 def arrotonda(x):
     # Decimali solo per unità piccole (libri, capitoli), interi per le parole.
-    return round(x, 2) if x < 10 else round(x)
+    return round(x, 1) if x < 10 else round(x)
 
 
 oggi = date.today()
@@ -49,6 +50,10 @@ if vicino:
 else:
     st.info("Nessun fronte attivo. Esegui `python seed.py` o crea un fronte nella pagina Fronti.")
 
+# ---------------------------------------------------------------- agenda di oggi
+st.divider()
+mostra_agenda_oggi(conn, oggi)
+
 # ---------------------------------------------------------------- fronti
 st.divider()
 PALLINO = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴", "grigio": "⚪"}
@@ -75,9 +80,13 @@ for i, f in enumerate(fronti):
             stima = p["data_stimata"]
             stima_txt = f"stima: {stima:%d/%m/%Y}" if stima else "stima: non calcolabile"
             st.markdown(f"{PALLINO[p['colore']]} {stima_txt}")
+            nec, att = p["ritmo_necessario"], p["ritmo_attuale"]
+            periodo = "giorno"
+            if nec < 1:  # unità piccole (libri, capitoli): meglio a settimana
+                nec, att, periodo = nec * 7, att * 7, "settimana"
             st.caption(
-                f"servono ~{num(arrotonda(p['ritmo_necessario']))} {f['unita']}/giorno, "
-                f"ritmo attuale: {num(round(p['ritmo_attuale'], 1))}"
+                f"servono ~{num(arrotonda(nec))} {f['unita']}/{periodo}, "
+                f"ritmo attuale: {num(arrotonda(att))}"
             )
         rinvii = n_rinvii.get(f["id"], 0)
         st.caption(f"Rinvii registrati: {rinvii}")

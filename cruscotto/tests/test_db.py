@@ -37,3 +37,22 @@ def test_una_sola_sessione_in_corso(conn):
     f = db.crea_fronte(conn, "Tesi", "2027-02-28", "capitoli", 6)
     s1 = db.avvia_sessione(conn, f, 90)
     assert db.avvia_sessione(conn, f, 10) == s1
+
+
+def test_aggiorna_ical_non_tocca_manuali_ne_assistente(conn):
+    import logica
+    from tests.test_logica import ICS
+    f = db.crea_fronte(conn, "Paper", "2026-10-15", "parole", 7500)
+    db.salva_impegno(conn, "Lezione", "lezione", "2026-09-22T10:00:00", "2026-09-22T12:00:00")
+    db.salva_impegno(conn, "Blocco", "blocco di lavoro", "2026-09-23T09:00:00", "2026-09-23T10:30:00",
+                     fronte_id=f, origine="assistente")
+    da, a = datetime(2026, 9, 21), datetime(2026, 9, 28)
+    ev = logica.eventi_da_ical(ICS, da.date(), a.date())
+    for _ in range(3):  # aggiornamenti ripetuti: nessun duplicato
+        db.sostituisci_ical(conn, ev, da, a)
+    tutti = db.impegni(conn)
+    assert sorted(i["origine"] for i in tutti) == ["assistente", "ical", "ical", "manuale"]
+    assert all(i["fisso"] for i in tutti if i["origine"] == "ical")
+    # un evento ical rimosso dal calendario sparisce al prossimo aggiornamento
+    db.sostituisci_ical(conn, ev[:1], da, a)
+    assert sorted(i["origine"] for i in db.impegni(conn)) == ["assistente", "ical", "manuale"]

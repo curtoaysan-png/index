@@ -27,13 +27,20 @@ if sessione is None:
         "Fronte", ids, index=ids.index(pre) if pre in ids else 0,
         format_func=lambda i: next(f["nome"] for f in fronti if f["id"] == i),
     )
-    durata = st.radio("Durata", [90, 10], format_func=lambda m: f"{m} minuti", horizontal=True)
+    # Dal calendario arriva la durata del blocco di lavoro.
+    durate = [90, 10]
+    blocco = st.session_state.get("durata_scelta")
+    if blocco and blocco not in durate:
+        durate.insert(0, blocco)
+    durata = st.radio("Durata", durate, index=durate.index(blocco) if blocco in durate else 0,
+                      format_func=lambda m: f"{m} minuti", horizontal=True)
     rip = db.ultima_ripartenza(conn, fronte_id)
     if rip:
         st.markdown("**Da dove riparti**")
         st.info(rip)
     if st.button("Avvia", type="primary"):
         db.avvia_sessione(conn, fronte_id, durata)
+        st.session_state.pop("durata_scelta", None)
         st.rerun()
     st.stop()
 

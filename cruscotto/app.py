@@ -9,5 +9,6 @@ db.connetti()  # crea il database al primo avvio
 pagine = [
     st.Page("pages/home.py", title="Home", icon="🏠", default=True),
     st.Page("pages/sessione.py", title="Sessione", icon="⏱️"),
+    st.Page("pages/calendario.py", title="Calendario", icon="📅"),
 ]
 st.navigation(pagine).run()
