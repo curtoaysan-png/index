@@ -107,8 +107,18 @@ def catena_giorni(sessioni, oggi: date, n: int = 14) -> list[tuple[date, bool]]:
 
 
 def fronte_piu_vicino(fronti: list[dict]) -> dict | None:
-    attivi = [f for f in fronti if f["attivo"]]
-    return min(attivi, key=lambda f: f["scadenza"]) if attivi else None
+    """Fronte attivo con la scadenza più vicina, escludendo quelli con l'obiettivo raggiunto."""
+    aperti = [f for f in fronti if f["attivo"]
+              and (f.get("obiettivo") is None or (f.get("attuale") or 0) < f["obiettivo"])]
+    return min(aperti, key=lambda f: f["scadenza"]) if aperti else None
+
+
+def normalizza_url_ical(url: str) -> str:
+    """Google a volte mostra l'indirizzo come webcal://: va scaricato in https."""
+    url = url.strip()
+    if url.lower().startswith("webcal://"):
+        url = "https://" + url[len("webcal://"):]
+    return url
 
 
 # ---------------------------------------------------------------- calendario

@@ -176,3 +176,16 @@ def test_riepilogo_acquisti_mese():
     assert r["rinunciato"] == 160 and r["comprato"] == 40
     assert r["per_categoria"] == {"giochi": {"comprato": 40, "rinunciato": 60},
                                   "tecnologia": {"comprato": 0, "rinunciato": 100}}
+
+
+def test_fronte_piu_vicino_salta_quelli_completati():
+    completato = {**PAPER, "id": 9, "scadenza": "2026-10-01", "attuale": 7500}
+    archiviato = {**PAPER, "id": 8, "scadenza": "2026-09-30", "attivo": 0}
+    senza_obiettivo = {**PAPER, "id": 7, "scadenza": "2027-01-15", "obiettivo": None}
+    assert logica.fronte_piu_vicino([completato, archiviato, PAPER, senza_obiettivo])["id"] == 1
+    assert logica.fronte_piu_vicino([completato]) is None
+
+
+def test_url_webcal():
+    assert logica.normalizza_url_ical(" webcal://calendar.google.com/x.ics ") == "https://calendar.google.com/x.ics"
+    assert logica.normalizza_url_ical("https://a/b.ics") == "https://a/b.ics"

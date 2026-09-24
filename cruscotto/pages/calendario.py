@@ -281,7 +281,7 @@ with st.expander("Import da Google Calendar (iCal, solo lettura)"):
     if st.button("Aggiorna da iCal", disabled=not url.strip()):
         try:
             db.salva_preferenze(conn, ical_url=url.strip())
-            with urllib.request.urlopen(url.strip(), timeout=20) as risposta:
+            with urllib.request.urlopen(logica.normalizza_url_ical(url), timeout=20) as risposta:
                 testo = risposta.read()
             eventi_ical = logica.eventi_da_ical(testo, lunedi, lunedi + timedelta(days=7))
             n = db.sostituisci_ical(
