@@ -21,8 +21,8 @@ if errorlevel 1 goto errore_installazione
 copy /y requirements.txt data\requisiti_installati.txt >nul
 
 :dopo_installa
-rem Crea i fronti iniziali solo se il database non esiste ancora.
-if not exist data\cruscotto.db python seed.py
+rem Crea i fronti iniziali solo al primo avvio (i dati stanno in AppData\Local\Cruscotto).
+python seed.py --se-vuoto
 
 rem Evita la domanda sull'email che Streamlit fa al primo avvio.
 if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit"

@@ -105,3 +105,38 @@ def test_fonti(conn):
     assert db.fonti(conn, f)[0]["stato"] == "solo citato"
     with pytest.raises(ValueError):
         db.cambia_stato_fonte(conn, fo, "boh")
+
+
+def test_database_spostato_fuori_dalla_cartella_app(tmp_path, monkeypatch):
+    import config
+    vecchio = tmp_path / "app" / "data" / "cruscotto.db"
+    nuovo = tmp_path / "AppData" / "Cruscotto" / "cruscotto.db"
+    vecchio.parent.mkdir(parents=True)
+    c = db.connetti(vecchio)
+    db.salva_impegno(c, "Turno", "turno", "2026-09-23T17:00:00", "2026-09-23T22:00:00")
+    c.close()
+    monkeypatch.setattr(config, "DB_PATH", nuovo)
+    monkeypatch.setattr(config, "VECCHIO_DB_PATH", vecchio)
+
+    conn = db.connetti()  # primo avvio: sposta
+    assert [i["titolo"] for i in db.impegni(conn)] == ["Turno"]
+    assert not vecchio.exists()
+    assert vecchio.with_name("cruscotto.db.spostato").exists()  # rinominato, non cancellato
+    conn.close()
+
+    # se ricompare un vecchio database, quello nuovo non viene sovrascritto
+    db.connetti(vecchio).close()
+    assert db.sposta_vecchio_db(nuovo, vecchio) is False
+    assert [i["titolo"] for i in db.impegni(db.connetti())] == ["Turno"]
+
+
+def test_seed_se_vuoto(tmp_path, monkeypatch):
+    import sys
+    import config
+    import seed
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "c.db")
+    monkeypatch.setattr(config, "VECCHIO_DB_PATH", tmp_path / "non_esiste.db")
+    monkeypatch.setattr(sys, "argv", ["seed.py", "--se-vuoto"])
+    seed.main()
+    seed.main()  # seconda volta: nessun errore, nessun duplicato
+    assert len(db.fronti(db.connetti(), solo_attivi=False)) == 4

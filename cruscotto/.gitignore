@@ -4,3 +4,4 @@ backup/
 __pycache__/
 .pytest_cache/
 data/requisiti_installati.txt
+data/*.spostato
