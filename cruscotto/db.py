@@ -1,5 +1,6 @@
 """Accesso al database SQLite. Le regole obbligatorie sono verificate qui."""
 import json
+import shutil
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -98,8 +99,23 @@ def _ora() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def sposta_vecchio_db(nuovo: Path, vecchio: Path) -> bool:
+    """Sposta il database dalla vecchia posizione (dentro la cartella dell'app) alla nuova.
+
+    Solo se la nuova posizione è ancora vuota. Il vecchio file viene rinominato, non cancellato.
+    """
+    if nuovo.exists() or not vecchio.exists():
+        return False
+    nuovo.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(vecchio, nuovo)
+    vecchio.rename(vecchio.with_name(vecchio.name + ".spostato"))
+    return True
+
+
 def connetti(percorso=None) -> sqlite3.Connection:
     """Apre il database (creandolo se serve) e restituisce la connessione."""
+    if percorso is None:
+        sposta_vecchio_db(Path(config.DB_PATH), Path(config.VECCHIO_DB_PATH))
     percorso = Path(percorso or config.DB_PATH)
     if str(percorso) != ":memory:":
         percorso.parent.mkdir(parents=True, exist_ok=True)

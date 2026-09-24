@@ -14,6 +14,9 @@ FRONTI = [
 def main():
     conn = db.connetti()
     if db.fronti(conn, solo_attivi=False):
+        # --se-vuoto (usato da avvia.bat): nessun messaggio se i fronti ci sono già.
+        if "--se-vuoto" in sys.argv:
+            return
         print("Il database contiene già dei fronti: seed non eseguito.")
         sys.exit(1)
     for nome, scadenza, unita, obiettivo, attuale in FRONTI:

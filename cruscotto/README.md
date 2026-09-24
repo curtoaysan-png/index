@@ -37,13 +37,21 @@ Si apre il browser su `http://localhost:8501`. Dalla home una sessione parte con
 
 ## Database e backup
 
-- Il database è in `data/cruscotto.db` (percorso modificabile in `config.py`, `DB_PATH`).
-- **Tienilo in una cartella locale, non su OneDrive in sincronizzazione**: se il file viene aperto
-  da due computer insieme si rischia di corromperlo.
+- I dati sono salvati subito, a ogni "Aggiungi" o "Salva": chiudere la scheda o la finestra non
+  cancella nulla.
+- Il database sta **fuori dalla cartella dell'app**, così puoi scaricare una versione nuova e
+  sostituire la cartella senza perdere nulla:
+  - Windows: `C:\Users\<nome>\AppData\Local\Cruscotto\cruscotto.db` (cartella locale, non
+    sincronizzata da OneDrive);
+  - Mac/Linux: `~/.cruscotto/cruscotto.db`.
+- Chi aveva già dei dati in `cruscotto/data/cruscotto.db` (versione precedente) li ritrova
+  spostati automaticamente al primo avvio; il vecchio file resta rinominato in
+  `cruscotto.db.spostato`.
 - Per il backup: pagina **Preferenze e backup** → scegli la cartella (va bene anche una cartella di
   OneDrive) → **Esporta backup**. Viene salvata una copia con data e ora nel nome, ad esempio
   `cruscotto_2026-09-24_1830.db`.
-- Per ripristinare un backup: chiudi l'app e copia il file al posto di `data/cruscotto.db`.
+- Per ripristinare un backup: chiudi l'app e copia il file al posto di `cruscotto.db` nella
+  cartella dei dati.
 
 ## Assistente (facoltativo)
 
