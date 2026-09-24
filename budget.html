@@ -250,6 +250,33 @@
 
     .cat-edit-row { display: flex; gap: 8px; margin-bottom: 8px; }
     .cat-edit-row input { flex: 1; min-width: 0; padding: 8px 10px; }
+    .cat-edit-row input.cap { flex: 0 0 96px; text-align: right; }
+    .cat-edit-head { display: flex; gap: 8px; font-size: 12px; color: var(--ink-dim); margin: 12px 0 4px; }
+    .cat-edit-head span:first-child { flex: 1; }
+    .cat-edit-head span:nth-child(2) { flex: 0 0 96px; text-align: right; }
+    .cat-edit-head span:last-child { flex: 0 0 38px; }
+    .setting-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .setting-row label { flex: 1; margin: 0; font-size: 14px; color: var(--ink); }
+    .setting-row input { flex: 0 0 110px; text-align: right; }
+
+    /* ---- Tetto settimanale ---- */
+    .week { --lvl: var(--save); border-radius: 14px; padding: 16px; margin-top: 18px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow); }
+    .week.mid { --lvl: var(--wants); }
+    .week.bad { --lvl: var(--warn); }
+    .week .w-label { font-size: 14px; color: var(--ink-dim); }
+    .week .w-amount { font-size: 34px; font-weight: 800; color: var(--lvl); font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -0.02em; }
+    .week .w-sub { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--ink-dim); margin-top: 8px; }
+    .week .w-sub span:last-child { text-align: right; }
+    .meter { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; margin-top: 10px; }
+    .meter i { display: block; height: 100%; background: var(--lvl); border-radius: 5px; transition: width 0.3s; }
+    .caps { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
+    .cap-row { --lvl: var(--save); margin-top: 10px; }
+    .cap-row.mid { --lvl: var(--wants); }
+    .cap-row.bad { --lvl: var(--warn); }
+    .cap-row .c-head { display: flex; justify-content: space-between; font-size: 13px; }
+    .cap-row .c-head b { font-variant-numeric: tabular-nums; }
+    .cap-row .meter { height: 6px; margin-top: 4px; }
+    .caps-title { font-size: 12px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; }
 
     .hidden { display: none; }
   </style>
@@ -261,6 +288,14 @@
       <h1>Budget Smart</h1>
       <p>Inserisci il tuo stipendio: l'assistente AI lo divide in categorie per aiutarti a risparmiare.</p>
     </header>
+
+    <section class="week" id="week-card" aria-live="polite">
+      <div class="w-label" id="w-label">Ti restano questa settimana</div>
+      <div class="w-amount" id="w-amount"></div>
+      <div class="meter"><i id="w-meter"></i></div>
+      <div class="w-sub"><span id="w-spent"></span><span id="w-days"></span></div>
+      <div class="caps hidden" id="caps"></div>
+    </section>
 
     <section class="card quick" id="log-card">
       <h2>Registra una spesa</h2>
@@ -278,8 +313,13 @@
       <div class="quick-hint" id="quick-hint" role="status">Scrivi l'importo e tocca la categoria per salvare</div>
 
       <details id="cat-editor">
-        <summary>Modifica categorie</summary>
-        <div style="margin-top:10px" id="cat-edit-list"></div>
+        <summary>Tetti e categorie</summary>
+        <div class="setting-row">
+          <label for="weekly-cap">Tetto settimanale per le spese variabili (€)</label>
+          <input id="weekly-cap" type="text" inputmode="decimal" autocomplete="off">
+        </div>
+        <div class="cat-edit-head"><span>Categoria</span><span>Tetto €/mese</span><span></span></div>
+        <div id="cat-edit-list"></div>
         <div class="cat-edit-row">
           <input id="cat-new" type="text" placeholder="Nuova categoria" aria-label="Nuova categoria">
           <button type="button" id="cat-add">Aggiungi</button>
@@ -1147,10 +1187,11 @@
       // ---- Registro spese quotidiano ----
       // =====================================================================
       const LOG_KEY = "budget-smart-log-v1";
+      const DEFAULT_WEEKLY_CAP = 45;
       const DEFAULT_CATS = ["Cibo fuori", "Benzina", "Spesa", "Trasporti", "Svago", "Shopping", "Altro"];
       const eur2 = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
 
-      // log = { categories:[{id, name}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
+      // log = { weeklyCap, categories:[{id, name, cap?}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
       let log = defaultLog();
       let logMonth = null;   // "YYYY-MM" visualizzato nell'elenco
       let editingId = null;  // id della spesa in modifica
@@ -1160,7 +1201,7 @@
       }
 
       function defaultLog() {
-        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [] };
+        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [], weeklyCap: DEFAULT_WEEKLY_CAP };
       }
 
       function todayISO() {
@@ -1176,7 +1217,8 @@
           if (data && Array.isArray(data.categories) && Array.isArray(data.expenses)) {
             log = {
               categories: data.categories.filter(c => c && c.id && c.name),
-              expenses: data.expenses.filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.amount > 0)
+              expenses: data.expenses.filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.amount > 0),
+              weeklyCap: data.weeklyCap > 0 ? data.weeklyCap : DEFAULT_WEEKLY_CAP
             };
             if (log.categories.length === 0) log.categories = defaultLog().categories;
           }
@@ -1221,6 +1263,8 @@
         $("cat-edit-list").innerHTML = log.categories.map(c => `
           <div class="cat-edit-row">
             <input type="text" value="${escapeHtml(c.name)}" data-rename="${c.id}" aria-label="Nome categoria">
+            <input type="text" class="cap" inputmode="decimal" autocomplete="off" placeholder="—"
+              value="${c.cap ? String(c.cap).replace(".", ",") : ""}" data-cap="${c.id}" aria-label="Tetto mensile per ${escapeHtml(c.name)}">
             <button type="button" class="icon" data-delcat="${c.id}" aria-label="Elimina ${escapeHtml(c.name)}">✕</button>
           </div>`).join("");
       }
@@ -1236,8 +1280,61 @@
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       }
 
+      function isoOf(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      }
+
+      // Settimana corrente da lunedì a domenica
+      function currentWeek() {
+        const now = new Date();
+        const dow = (now.getDay() + 6) % 7; // 0 = lunedì
+        const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+        const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+        return { start: isoOf(mon), end: isoOf(sun), daysLeft: 7 - dow };
+      }
+
+      // verde < 70%, arancione 70–100%, rosso oltre il tetto
+      function levelClass(spent, cap) {
+        if (spent > cap) return "bad";
+        return spent >= cap * 0.7 ? "mid" : "";
+      }
+
+      function renderWeek() {
+        const w = currentWeek();
+        const cap = log.weeklyCap;
+        const spent = log.expenses.filter(e => e.date >= w.start && e.date <= w.end).reduce((a, e) => a + e.amount, 0);
+        const left = cap - spent;
+        const card = $("week-card");
+        card.classList.remove("mid", "bad");
+        const lvl = levelClass(spent, cap);
+        if (lvl) card.classList.add(lvl);
+
+        $("w-label").textContent = left >= 0 ? "Ti restano questa settimana" : "Hai sforato il tetto settimanale di";
+        $("w-amount").textContent = eur2.format(Math.abs(left));
+        $("w-meter").style.width = `${Math.min(100, cap > 0 ? spent / cap * 100 : 100)}%`;
+        $("w-spent").textContent = `Spesi ${eur2.format(spent)} su ${eur2.format(cap)}`;
+        $("w-days").textContent = w.daysLeft === 1 ? "Ultimo giorno (domenica)"
+          : `${w.daysLeft} giorni rimasti` + (left > 0 ? ` · ~${eur2.format(left / w.daysLeft)}/giorno` : "");
+
+        const month = todayISO().slice(0, 7);
+        const capped = log.categories.filter(c => c.cap > 0);
+        $("caps").classList.toggle("hidden", capped.length === 0);
+        $("caps").innerHTML = capped.length === 0 ? "" :
+          `<div class="caps-title">Tetti mensili · ${monthLabelLong(month)}</div>` +
+          capped.map(c => {
+            const sp = log.expenses.filter(e => e.catId === c.id && e.date.slice(0, 7) === month).reduce((a, e) => a + e.amount, 0);
+            const rest = c.cap - sp;
+            return `<div class="cap-row ${levelClass(sp, c.cap)}">
+              <div class="c-head"><span>${escapeHtml(c.name)}</span>
+                <span><b>${eur2.format(sp)}</b> / ${eur2.format(c.cap)} · ${rest >= 0 ? `restano ${eur2.format(rest)}` : `+${eur2.format(-rest)}`}</span></div>
+              <div class="meter"><i style="width:${Math.min(100, sp / c.cap * 100)}%"></i></div>
+            </div>`;
+          }).join("");
+      }
+
       function renderLog() {
         renderCats();
+        renderWeek();
         $("log-month").textContent = monthLabelLong(logMonth);
         $("log-next").disabled = logMonth >= todayISO().slice(0, 7);
 
@@ -1341,6 +1438,14 @@
 
       // Gestione categorie
       $("cat-edit-list").addEventListener("change", e => {
+        if (e.target.dataset.cap) {
+          const c = log.categories.find(c => c.id === e.target.dataset.cap);
+          const cap = parseAmount(e.target.value);
+          if (c) { if (cap) c.cap = cap; else delete c.cap; }
+          saveLog();
+          renderLog();
+          return;
+        }
         const id = e.target.dataset.rename;
         if (!id) return;
         const c = log.categories.find(c => c.id === id);
@@ -1381,7 +1486,19 @@
       });
       $("cat-new").addEventListener("keydown", e => { if (e.key === "Enter") $("cat-add").click(); });
 
+      $("weekly-cap").addEventListener("change", () => {
+        const cap = parseAmount($("weekly-cap").value);
+        if (cap) log.weeklyCap = cap;
+        $("weekly-cap").value = String(log.weeklyCap).replace(".", ",");
+        saveLog();
+        renderLog();
+      });
+
+      // Al cambio di giorno/settimana con la pagina aperta, aggiorna il riepilogo
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) renderWeek(); });
+
       loadLog();
+      $("weekly-cap").value = String(log.weeklyCap).replace(".", ",");
       logMonth = todayISO().slice(0, 7);
       resetQuickForm();
       renderLog();
