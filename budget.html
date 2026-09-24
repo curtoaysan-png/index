@@ -434,6 +434,17 @@
       </div>
     </section>
 
+    <section class="card" id="backup-card">
+      <h2>Dati e backup</h2>
+      <p class="hint" style="margin-top:0">I dati restano solo su questo telefono. Esporta un file CSV ogni tanto per non perderli o per passarli su un altro dispositivo.</p>
+      <div class="actions">
+        <button type="button" id="csv-export" style="flex:1">⬇ Esporta CSV</button>
+        <button type="button" id="csv-import" style="flex:1">⬆ Importa CSV</button>
+      </div>
+      <input id="csv-file" type="file" accept=".csv,text/csv,text/plain" class="hidden">
+      <div class="status" id="csv-status" role="status"></div>
+    </section>
+
     <section class="card">
       <h2>I tuoi dati</h2>
       <div class="grid">
@@ -1867,6 +1878,156 @@
           : `Nessun dato di ${monthLabelLong(prevMonth)} da confrontare.`) + `</p>`;
         $("sum-body").innerHTML = html;
       }
+
+
+      // ---- Backup CSV ----
+      // Un solo file con una colonna "tipo": spesa, entrata, costo_fisso, categoria, impostazione.
+      // Separatore ";" e decimali con la virgola, così si apre bene anche in Excel in italiano.
+      const CSV_HEAD = ["tipo", "data", "importo", "nome", "nota", "mesi_pagati"];
+      const csvNum = v => v ? String(v).replace(".", ",") : "";
+
+      function csvCell(v) {
+        const s = String(v == null ? "" : v);
+        return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      }
+
+      function buildCsv() {
+        const rows = [CSV_HEAD];
+        rows.push(["impostazione", "", csvNum(log.weeklyCap), "tetto_settimanale", "", ""]);
+        rows.push(["impostazione", "", csvNum(log.salary), "stipendio", "", ""]);
+        log.categories.forEach(c => rows.push(["categoria", "", csvNum(c.cap), c.name, "", ""]));
+        log.fixedCosts.forEach(f => {
+          const months = Object.keys(log.fixedPaid).filter(m => (log.fixedPaid[m] || []).includes(f.id)).sort();
+          rows.push(["costo_fisso", "", csvNum(f.amount), f.name, "", months.join(" ")]);
+        });
+        [...log.incomes].sort((a, b) => a.date.localeCompare(b.date))
+          .forEach(e => rows.push(["entrata", e.date, csvNum(e.amount), "", e.note || "", ""]));
+        [...log.expenses].sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0))
+          .forEach(e => rows.push(["spesa", e.date, csvNum(e.amount), catName(e.catId), e.note || "", ""]));
+        return rows.map(r => r.map(csvCell).join(";")).join("\r\n");
+      }
+
+      // Parser CSV con virgolette; riconosce ";" o "," come separatore
+      function parseCsv(text) {
+        text = text.replace(/^﻿/, "");
+        const firstLine = text.split(/\r?\n/, 1)[0];
+        const sep = (firstLine.match(/;/g) || []).length >= (firstLine.match(/,/g) || []).length ? ";" : ",";
+        const rows = [];
+        let row = [], cell = "", quoted = false;
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          if (quoted) {
+            if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+            else if (ch === '"') quoted = false;
+            else cell += ch;
+          } else if (ch === '"') quoted = true;
+          else if (ch === sep) { row.push(cell); cell = ""; }
+          else if (ch === "\n" || ch === "\r") {
+            if (ch === "\r" && text[i + 1] === "\n") i++;
+            row.push(cell); rows.push(row); row = []; cell = "";
+          } else cell += ch;
+        }
+        if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+        return rows.filter(r => r.some(c => c.trim() !== ""));
+      }
+
+      function logFromCsv(text) {
+        const rows = parseCsv(text);
+        if (rows.length < 2 || rows[0][0].trim().toLowerCase() !== "tipo") {
+          throw new Error("Il file non sembra un backup di Budget Smart.");
+        }
+        const next = { categories: [], expenses: [], incomes: [], fixedCosts: [], fixedPaid: {},
+          weeklyCap: DEFAULT_WEEKLY_CAP, salary: 0 };
+        const catByName = new Map();
+        const getCat = name => {
+          const key = name.toLowerCase();
+          if (!catByName.has(key)) {
+            const c = { id: uid(), name };
+            catByName.set(key, c);
+            next.categories.push(c);
+          }
+          return catByName.get(key);
+        };
+        const isDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d);
+        let skipped = 0;
+        rows.slice(1).forEach((r, i) => {
+          const [tipo, data, importo, nome, nota, mesi] = CSV_HEAD.map((_, k) => (r[k] || "").trim());
+          const amount = parseAmount(importo);
+          switch (tipo.toLowerCase()) {
+            case "impostazione":
+              if (nome === "tetto_settimanale" && amount) next.weeklyCap = amount;
+              else if (nome === "stipendio") next.salary = amount;
+              else skipped++;
+              break;
+            case "categoria":
+              if (!nome) { skipped++; break; }
+              if (amount) getCat(nome).cap = amount; else getCat(nome);
+              break;
+            case "costo_fisso": {
+              if (!nome || !amount) { skipped++; break; }
+              const f = { id: uid(), name: nome, amount };
+              next.fixedCosts.push(f);
+              (mesi.match(/\d{4}-\d{2}/g) || []).forEach(m => (next.fixedPaid[m] = next.fixedPaid[m] || []).push(f.id));
+              break;
+            }
+            case "entrata":
+              if (!isDate(data) || !amount) { skipped++; break; }
+              next.incomes.push({ id: uid(), date: data, amount, note: nota, created: i });
+              break;
+            case "spesa":
+              if (!isDate(data) || !amount) { skipped++; break; }
+              next.expenses.push({ id: uid(), date: data, amount, catId: getCat(nome || "Altro").id, note: nota, created: i });
+              break;
+            default:
+              skipped++;
+          }
+        });
+        if (next.categories.length === 0) next.categories = defaultLog().categories;
+        return { next, skipped };
+      }
+
+      $("csv-export").addEventListener("click", () => {
+        try {
+          const blob = new Blob(["﻿" + buildCsv()], { type: "text/csv;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `budget-smart-${todayISO()}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          $("csv-status").textContent = `Backup esportato: ${log.expenses.length} spese, ${log.incomes.length} entrate, ${log.fixedCosts.length} costi fissi.`;
+        } catch (err) {
+          $("csv-status").textContent = "Esportazione non riuscita.";
+        }
+      });
+
+      $("csv-import").addEventListener("click", () => $("csv-file").click());
+      $("csv-file").addEventListener("change", async () => {
+        const file = $("csv-file").files[0];
+        $("csv-file").value = "";
+        if (!file) return;
+        const st = $("csv-status");
+        try {
+          const { next, skipped } = logFromCsv(await file.text());
+          const msg = `Il file contiene ${next.expenses.length} spese, ${next.incomes.length} entrate e ` +
+            `${next.fixedCosts.length} costi fissi.\n\nSostituire tutti i dati attuali con quelli del file?`;
+          if (!confirm(msg)) { st.textContent = "Importazione annullata."; return; }
+          log = next;
+          editingId = null;
+          resetQuickForm();
+          resetIncomeForm();
+          resetFixedForm();
+          $("weekly-cap").value = String(log.weeklyCap).replace(".", ",");
+          logMonth = todayISO().slice(0, 7);
+          saveLog();
+          renderLog();
+          st.textContent = "Dati importati ✓" + (skipped ? ` (${skipped} righe non valide ignorate)` : "");
+        } catch (err) {
+          st.textContent = err.message || "Il file non è leggibile.";
+        }
+      });
 
       loadLog();
       // Prima volta: importa i costi fissi inseriti nel pianificatore
