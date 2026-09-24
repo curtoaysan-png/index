@@ -154,3 +154,25 @@ def test_eventi_da_ical():
     ]
     # la ricorrenza compare anche nella settimana successiva
     assert len(logica.eventi_da_ical(ICS, date(2026, 9, 28), date(2026, 10, 5))) == 1
+
+
+# ---------------------------------------------------------------- acquisti
+
+def test_attesa_residua():
+    agg = "2026-09-24T10:00:00"
+    assert logica.attesa_residua(agg, datetime(2026, 9, 26, 9, 0)) == timedelta(hours=1)
+    assert logica.attesa_residua(agg, datetime(2026, 9, 26, 10, 0)) <= timedelta(0)
+
+
+def test_riepilogo_acquisti_mese():
+    acquisti = [
+        {"prezzo": 60.0, "categoria": "giochi", "stato": "rinunciato", "deciso_il": "2026-09-10T10:00:00"},
+        {"prezzo": 40.0, "categoria": "giochi", "stato": "comprato", "deciso_il": "2026-09-11T10:00:00"},
+        {"prezzo": 100.0, "categoria": "tecnologia", "stato": "rinunciato", "deciso_il": "2026-09-12T10:00:00"},
+        {"prezzo": 999.0, "categoria": "tecnologia", "stato": "rinunciato", "deciso_il": "2026-08-30T10:00:00"},
+        {"prezzo": 5.0, "categoria": "altro", "stato": "in attesa", "deciso_il": None},
+    ]
+    r = logica.riepilogo_acquisti_mese(acquisti, 2026, 9)
+    assert r["rinunciato"] == 160 and r["comprato"] == 40
+    assert r["per_categoria"] == {"giochi": {"comprato": 40, "rinunciato": 60},
+                                  "tecnologia": {"comprato": 0, "rinunciato": 100}}

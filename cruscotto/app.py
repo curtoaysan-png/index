@@ -13,6 +13,8 @@ pagine = [
     st.Page("pages/storico_piani.py", title="Storico piani", icon="🗂️"),
     st.Page("pages/fronti.py", title="Fronti", icon="🎯"),
     st.Page("pages/rinvii.py", title="Rinvii", icon="↪️"),
+    st.Page("pages/acquisti.py", title="Acquisti", icon="🛒"),
+    st.Page("pages/fonti.py", title="Fonti", icon="📚"),
     st.Page("pages/preferenze.py", title="Preferenze e backup", icon="⚙️"),
 ]
 st.navigation(pagine).run()

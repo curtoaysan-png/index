@@ -83,3 +83,25 @@ def test_backup(conn, tmp_path):
     dest = db.esporta_backup(conn, tmp_path / "bk")
     copia = db.connetti(dest)
     assert db.fronti(copia)[0]["nome"] == "Paper"
+
+
+def test_acquisto_non_si_segna_prima_di_48_ore(conn):
+    a = db.aggiungi_acquisto(conn, "Cuffie", 89.9, "tecnologia")
+    aggiunto = datetime.fromisoformat(db.acquisti(conn)[0]["aggiunto_il"])
+    for stato in ("comprato", "rinunciato"):
+        with pytest.raises(ValueError):
+            db.decidi_acquisto(conn, a, stato, adesso=aggiunto + timedelta(hours=47, minutes=59))
+    assert db.acquisti(conn)[0]["stato"] == "in attesa"
+    db.decidi_acquisto(conn, a, "rinunciato", adesso=aggiunto + timedelta(hours=48))
+    assert db.acquisti(conn)[0]["stato"] == "rinunciato"
+    with pytest.raises(ValueError):  # già deciso
+        db.decidi_acquisto(conn, a, "comprato", adesso=aggiunto + timedelta(days=5))
+
+
+def test_fonti(conn):
+    f = db.crea_fronte(conn, "Tesi", "2027-02-28", "capitoli", 6)
+    fo = db.aggiungi_fonte(conn, f, "Osterhammel, La trasformazione del mondo")
+    db.cambia_stato_fonte(conn, fo, "solo citato")
+    assert db.fonti(conn, f)[0]["stato"] == "solo citato"
+    with pytest.raises(ValueError):
+        db.cambia_stato_fonte(conn, fo, "boh")
