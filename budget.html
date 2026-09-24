@@ -207,6 +207,50 @@
     label.checkline { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); cursor: pointer; margin: 0; }
     label.checkline input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); flex: none; }
 
+    /* ---- Registro spese ---- */
+    .quick { padding-top: 14px; }
+    .amount-input {
+      font-size: 32px; font-weight: 700; text-align: center; padding: 12px;
+      font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+    }
+    .quick-meta { display: flex; gap: 8px; margin-top: 10px; }
+    .quick-meta input { font-size: 15px; padding: 9px 10px; }
+    .quick-meta #exp-note { flex: 1; min-width: 0; }
+    .quick-meta #exp-date { flex: 0 0 150px; }
+    .chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; margin-top: 12px; }
+    .chips button {
+      min-height: 48px; padding: 8px 6px; font-size: 15px; font-weight: 600;
+      background: var(--surface-2); border: 1px solid var(--rule); border-radius: 12px;
+    }
+    .chips button:active { transform: scale(0.97); }
+    .chips button.selected { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+    .quick-hint { font-size: 12px; color: var(--ink-dim); margin-top: 8px; text-align: center; min-height: 1.2em; }
+    .quick-hint.error { color: var(--warn); }
+    .editing-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      background: var(--surface-2); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: 14px;
+    }
+
+    .log-head { display: flex; align-items: center; gap: 8px; margin: 18px 0 6px; }
+    .log-head .lh-month { flex: 1; text-align: center; font-weight: 600; text-transform: capitalize; }
+    .log-head button { padding: 6px 12px; }
+    .log-total { text-align: center; font-size: 13px; color: var(--ink-dim); margin-bottom: 8px; }
+    .log-total b { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .day { font-size: 12px; color: var(--ink-dim); margin: 12px 2px 4px; text-transform: capitalize; display: flex; justify-content: space-between; }
+    .exp {
+      display: flex; align-items: center; gap: 8px; padding: 8px 4px 8px 10px;
+      border: 1px solid var(--rule); border-radius: 10px; margin-bottom: 6px;
+    }
+    .exp.is-editing { border-color: var(--accent); }
+    .exp .e-main { flex: 1; min-width: 0; }
+    .exp .e-cat { font-weight: 600; font-size: 14px; }
+    .exp .e-note { font-size: 12px; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .exp .e-amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .exp button { border: none; background: transparent; color: var(--ink-dim); padding: 8px; font-size: 16px; }
+
+    .cat-edit-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .cat-edit-row input { flex: 1; min-width: 0; padding: 8px 10px; }
+
     .hidden { display: none; }
   </style>
 </head>
@@ -217,6 +261,39 @@
       <h1>Budget Smart</h1>
       <p>Inserisci il tuo stipendio: l'assistente AI lo divide in categorie per aiutarti a risparmiare.</p>
     </header>
+
+    <section class="card quick" id="log-card">
+      <h2>Registra una spesa</h2>
+      <div class="editing-bar hidden" id="editing-bar">
+        <span>Stai modificando una spesa</span>
+        <button type="button" class="small" id="edit-cancel">Annulla</button>
+      </div>
+      <input id="exp-amount" class="amount-input" type="text" inputmode="decimal" autocomplete="off"
+        placeholder="0,00 €" aria-label="Importo della spesa">
+      <div class="quick-meta">
+        <input id="exp-note" type="text" placeholder="Nota (facoltativa)" aria-label="Nota">
+        <input id="exp-date" type="date" aria-label="Data">
+      </div>
+      <div class="chips" id="exp-cats" role="group" aria-label="Categoria: tocca per salvare"></div>
+      <div class="quick-hint" id="quick-hint" role="status">Scrivi l'importo e tocca la categoria per salvare</div>
+
+      <details id="cat-editor">
+        <summary>Modifica categorie</summary>
+        <div style="margin-top:10px" id="cat-edit-list"></div>
+        <div class="cat-edit-row">
+          <input id="cat-new" type="text" placeholder="Nuova categoria" aria-label="Nuova categoria">
+          <button type="button" id="cat-add">Aggiungi</button>
+        </div>
+      </details>
+
+      <div class="log-head">
+        <button type="button" id="log-prev" aria-label="Mese precedente">‹</button>
+        <div class="lh-month" id="log-month"></div>
+        <button type="button" id="log-next" aria-label="Mese successivo">›</button>
+      </div>
+      <div class="log-total" id="log-total"></div>
+      <div id="log-list"></div>
+    </section>
 
     <section class="card">
       <h2>I tuoi dati</h2>
@@ -1064,6 +1141,250 @@
         render();
         setStatus("");
       });
+
+
+      // =====================================================================
+      // ---- Registro spese quotidiano ----
+      // =====================================================================
+      const LOG_KEY = "budget-smart-log-v1";
+      const DEFAULT_CATS = ["Cibo fuori", "Benzina", "Spesa", "Trasporti", "Svago", "Shopping", "Altro"];
+      const eur2 = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
+
+      // log = { categories:[{id, name}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
+      let log = defaultLog();
+      let logMonth = null;   // "YYYY-MM" visualizzato nell'elenco
+      let editingId = null;  // id della spesa in modifica
+
+      function uid() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      }
+
+      function defaultLog() {
+        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [] };
+      }
+
+      function todayISO() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      }
+
+      function loadLog() {
+        try {
+          const raw = localStorage.getItem(LOG_KEY);
+          if (!raw) return;
+          const data = JSON.parse(raw);
+          if (data && Array.isArray(data.categories) && Array.isArray(data.expenses)) {
+            log = {
+              categories: data.categories.filter(c => c && c.id && c.name),
+              expenses: data.expenses.filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.amount > 0)
+            };
+            if (log.categories.length === 0) log.categories = defaultLog().categories;
+          }
+        } catch (e) { /* storage vuoto o non leggibile: si parte dai default */ }
+      }
+
+      function saveLog() {
+        try {
+          localStorage.setItem(LOG_KEY, JSON.stringify(log));
+        } catch (e) {
+          quickHint("Attenzione: non riesco a salvare sul dispositivo.", true);
+        }
+      }
+
+      function parseAmount(str) {
+        const v = parseFloat(String(str).replace(/\s|€/g, "").replace(",", "."));
+        return isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : 0;
+      }
+
+      function catName(id) {
+        const c = log.categories.find(c => c.id === id);
+        return c ? c.name : "Senza categoria";
+      }
+
+      let hintTimer = null;
+      function quickHint(msg, isError) {
+        const h = $("quick-hint");
+        h.textContent = msg;
+        h.classList.toggle("error", !!isError);
+        clearTimeout(hintTimer);
+        if (!isError) hintTimer = setTimeout(() => {
+          h.textContent = editingId ? "Tocca la categoria per salvare le modifiche" : "Scrivi l'importo e tocca la categoria per salvare";
+        }, 2500);
+      }
+
+      function renderCats() {
+        const editing = editingId && log.expenses.find(e => e.id === editingId);
+        $("exp-cats").innerHTML = log.categories.map(c =>
+          `<button type="button" data-cat="${c.id}" class="${editing && editing.catId === c.id ? "selected" : ""}">${escapeHtml(c.name)}</button>`
+        ).join("");
+
+        $("cat-edit-list").innerHTML = log.categories.map(c => `
+          <div class="cat-edit-row">
+            <input type="text" value="${escapeHtml(c.name)}" data-rename="${c.id}" aria-label="Nome categoria">
+            <button type="button" class="icon" data-delcat="${c.id}" aria-label="Elimina ${escapeHtml(c.name)}">✕</button>
+          </div>`).join("");
+      }
+
+      function monthLabelLong(m) {
+        const [y, mo] = m.split("-").map(Number);
+        return new Date(y, mo - 1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+      }
+
+      function shiftMonth(m, delta) {
+        const [y, mo] = m.split("-").map(Number);
+        const d = new Date(y, mo - 1 + delta, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      }
+
+      function renderLog() {
+        renderCats();
+        $("log-month").textContent = monthLabelLong(logMonth);
+        $("log-next").disabled = logMonth >= todayISO().slice(0, 7);
+
+        const items = log.expenses
+          .filter(e => e.date.slice(0, 7) === logMonth)
+          .sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
+        const total = items.reduce((a, e) => a + e.amount, 0);
+        $("log-total").innerHTML = items.length
+          ? `${items.length} ${items.length === 1 ? "spesa" : "spese"} · totale <b>${eur2.format(total)}</b>`
+          : "Nessuna spesa registrata in questo mese.";
+
+        let html = "";
+        let lastDay = null;
+        items.forEach(e => {
+          if (e.date !== lastDay) {
+            lastDay = e.date;
+            const [y, mo, d] = e.date.split("-").map(Number);
+            const dayTotal = items.filter(x => x.date === e.date).reduce((a, x) => a + x.amount, 0);
+            const label = e.date === todayISO() ? "Oggi"
+              : new Date(y, mo - 1, d).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
+            html += `<div class="day"><span>${label}</span><span>${eur2.format(dayTotal)}</span></div>`;
+          }
+          html += `<div class="exp ${e.id === editingId ? "is-editing" : ""}">
+            <div class="e-main">
+              <div class="e-cat">${escapeHtml(catName(e.catId))}</div>
+              ${e.note ? `<div class="e-note">${escapeHtml(e.note)}</div>` : ""}
+            </div>
+            <div class="e-amt">${eur2.format(e.amount)}</div>
+            <button type="button" data-edit="${e.id}" aria-label="Modifica spesa">✎</button>
+            <button type="button" data-del="${e.id}" aria-label="Elimina spesa">✕</button>
+          </div>`;
+        });
+        $("log-list").innerHTML = html;
+      }
+
+      function resetQuickForm() {
+        editingId = null;
+        $("exp-amount").value = "";
+        $("exp-note").value = "";
+        $("exp-date").value = todayISO();
+        $("editing-bar").classList.add("hidden");
+      }
+
+      // Tocco su una categoria = salva (nuova spesa o modifica)
+      $("exp-cats").addEventListener("click", e => {
+        const btn = e.target.closest("[data-cat]");
+        if (!btn) return;
+        const amount = parseAmount($("exp-amount").value);
+        if (!amount) {
+          quickHint("Scrivi prima l'importo.", true);
+          $("exp-amount").focus();
+          return;
+        }
+        const date = $("exp-date").value || todayISO();
+        const note = $("exp-note").value.trim();
+        const catId = btn.dataset.cat;
+        if (editingId) {
+          const exp = log.expenses.find(x => x.id === editingId);
+          if (exp) Object.assign(exp, { amount, date, note, catId });
+          quickHint("Spesa aggiornata ✓");
+        } else {
+          log.expenses.push({ id: uid(), date, amount, catId, note, created: Date.now() });
+          quickHint(`${eur2.format(amount)} in ${catName(catId)} ✓`);
+        }
+        logMonth = date.slice(0, 7);
+        resetQuickForm();
+        saveLog();
+        renderLog();
+      });
+
+      $("exp-amount").addEventListener("input", () => $("quick-hint").classList.remove("error"));
+
+      $("log-list").addEventListener("click", e => {
+        const del = e.target.closest("[data-del]");
+        const edit = e.target.closest("[data-edit]");
+        if (del) {
+          const exp = log.expenses.find(x => x.id === del.dataset.del);
+          if (!exp || !confirm(`Eliminare ${eur2.format(exp.amount)} (${catName(exp.catId)})?`)) return;
+          log.expenses = log.expenses.filter(x => x.id !== exp.id);
+          if (editingId === exp.id) resetQuickForm();
+          saveLog();
+          renderLog();
+        } else if (edit) {
+          const exp = log.expenses.find(x => x.id === edit.dataset.edit);
+          if (!exp) return;
+          editingId = exp.id;
+          $("exp-amount").value = String(exp.amount).replace(".", ",");
+          $("exp-note").value = exp.note || "";
+          $("exp-date").value = exp.date;
+          $("editing-bar").classList.remove("hidden");
+          quickHint("Correggi i campi e tocca la categoria per salvare");
+          renderLog();
+          $("log-card").scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+
+      $("edit-cancel").addEventListener("click", () => { resetQuickForm(); renderLog(); quickHint("Modifica annullata"); });
+
+      $("log-prev").addEventListener("click", () => { logMonth = shiftMonth(logMonth, -1); renderLog(); });
+      $("log-next").addEventListener("click", () => { logMonth = shiftMonth(logMonth, 1); renderLog(); });
+
+      // Gestione categorie
+      $("cat-edit-list").addEventListener("change", e => {
+        const id = e.target.dataset.rename;
+        if (!id) return;
+        const c = log.categories.find(c => c.id === id);
+        const name = e.target.value.trim();
+        if (c && name) c.name = name; else e.target.value = c ? c.name : "";
+        saveLog();
+        renderLog();
+      });
+
+      $("cat-edit-list").addEventListener("click", e => {
+        const id = e.target.closest("[data-delcat]") && e.target.closest("[data-delcat]").dataset.delcat;
+        if (!id) return;
+        if (log.categories.length === 1) { alert("Serve almeno una categoria."); return; }
+        const c = log.categories.find(c => c.id === id);
+        const used = log.expenses.filter(x => x.catId === id);
+        const others = log.categories.filter(x => x.id !== id);
+        const fallback = others.find(x => x.name.toLowerCase() === "altro") || others[others.length - 1];
+        const msg = used.length
+          ? `Eliminare "${c.name}"? Le sue ${used.length} spese passeranno in "${fallback.name}".`
+          : `Eliminare la categoria "${c.name}"?`;
+        if (!confirm(msg)) return;
+        used.forEach(x => x.catId = fallback.id);
+        log.categories = others;
+        saveLog();
+        renderLog();
+      });
+
+      $("cat-add").addEventListener("click", () => {
+        const name = $("cat-new").value.trim();
+        if (!name) { $("cat-new").focus(); return; }
+        if (log.categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+          alert("Questa categoria esiste già."); return;
+        }
+        log.categories.push({ id: uid(), name });
+        $("cat-new").value = "";
+        saveLog();
+        renderLog();
+      });
+      $("cat-new").addEventListener("keydown", e => { if (e.key === "Enter") $("cat-add").click(); });
+
+      loadLog();
+      logMonth = todayISO().slice(0, 7);
+      resetQuickForm();
+      renderLog();
 
       load();
       syncFamily();
