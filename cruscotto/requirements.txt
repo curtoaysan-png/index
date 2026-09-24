@@ -1,0 +1,6 @@
+streamlit>=1.40
+streamlit-calendar>=1.2
+icalendar>=5.0
+recurring-ical-events>=2.1
+anthropic>=0.40
+pytest>=8.0
