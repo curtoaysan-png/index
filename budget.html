@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Budget Smart</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --surface: #ffffff;
+      --surface-2: #f0ede6;
+      --ink: #1f1d1a;
+      --ink-dim: #6b665e;
+      --rule: rgba(31, 29, 26, 0.12);
+      --accent: #2f6f5e;
+      --accent-ink: #ffffff;
+      --needs: #3b6ea8;
+      --wants: #c2803a;
+      --save: #2f8f6b;
+      --warn: #b3412e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 16px rgba(0, 0, 0, 0.04);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #151513;
+        --surface: #1f1e1b;
+        --surface-2: #292824;
+        --ink: #f0ede6;
+        --ink-dim: #a39e94;
+        --rule: rgba(240, 237, 230, 0.12);
+        --accent: #5fb89c;
+        --accent-ink: #0f1a16;
+        --needs: #6f9fd6;
+        --wants: #e0a25f;
+        --save: #5fc49a;
+        --warn: #e0735f;
+        --shadow: none;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.45;
+    }
+
+    .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 60px; }
+
+    header h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+    header p { margin: 0; color: var(--ink-dim); font-size: 14px; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 14px;
+      padding: 18px;
+      margin-top: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h2 { font-size: 16px; margin: 0 0 12px; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid .full { grid-column: 1 / -1; }
+    @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
+
+    label { display: block; font-size: 13px; color: var(--ink-dim); margin-bottom: 4px; }
+
+    input, select, textarea {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--ink);
+      font: inherit;
+      font-size: 15px;
+    }
+
+    textarea { resize: vertical; min-height: 60px; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    .income input { font-size: 22px; font-weight: 600; }
+
+    .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+
+    button {
+      font: inherit;
+      font-size: 15px;
+      border-radius: 10px;
+      padding: 11px 16px;
+      cursor: pointer;
+      border: 1px solid var(--rule);
+      background: var(--surface-2);
+      color: var(--ink);
+    }
+
+    button.primary { background: var(--accent); color: var(--accent-ink); border: none; font-weight: 600; flex: 1; }
+    button:disabled { opacity: 0.6; cursor: wait; }
+
+    details summary { cursor: pointer; font-size: 14px; color: var(--ink-dim); margin-top: 14px; }
+    details .hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
+
+    .status { font-size: 13px; margin-top: 10px; color: var(--ink-dim); min-height: 1em; }
+    .status.error { color: var(--warn); }
+
+    .summary { font-size: 15px; margin: 0 0 14px; }
+
+    .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+    .kpi { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+    .kpi .k { font-size: 12px; color: var(--ink-dim); }
+    .kpi .v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .kpi.needs .v { color: var(--needs); }
+    .kpi.wants .v { color: var(--wants); }
+    .kpi.save .v { color: var(--save); }
+    @media (max-width: 420px) { .kpi .v { font-size: 15px; } }
+
+    .bar { display: flex; height: 16px; border-radius: 8px; overflow: hidden; gap: 2px; background: var(--surface-2); }
+    .bar span { display: block; height: 100%; }
+
+    .group-title {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 13px; font-weight: 600; margin: 20px 0 8px;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .group-title .sub { font-weight: 400; color: var(--ink-dim); text-transform: none; letter-spacing: 0; }
+
+    .cat {
+      border: 1px solid var(--rule);
+      border-left: 4px solid var(--c);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .cat-row { display: flex; align-items: center; gap: 10px; }
+    .cat-name { flex: 1; font-weight: 500; min-width: 0; }
+    .cat-pct { font-size: 12px; color: var(--ink-dim); font-variant-numeric: tabular-nums; width: 42px; text-align: right; }
+    .cat input.amount { width: 110px; text-align: right; padding: 6px 8px; font-variant-numeric: tabular-nums; }
+    .cat .tip { font-size: 12px; color: var(--ink-dim); margin-top: 4px; }
+
+    .spent-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--ink-dim); }
+    .spent-row input { width: 90px; padding: 4px 8px; font-size: 13px; text-align: right; }
+    .progress { flex: 1; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+    .progress i { display: block; height: 100%; background: var(--c); }
+    .progress.over i { background: var(--warn); }
+
+    .unassigned { margin-top: 12px; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+    .unassigned.bad { color: var(--warn); }
+
+    ul.tips { padding-left: 18px; margin: 0; }
+    ul.tips li { margin-bottom: 6px; font-size: 14px; }
+
+    .source { font-size: 12px; color: var(--ink-dim); margin-top: 14px; }
+
+    .fixed-row, .add-cat-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .fixed-row input.fx-name, .add-cat-row #new-cat-name { flex: 1; min-width: 0; }
+    .fixed-row input.fx-amount, .add-cat-row #new-cat-amount { width: 100px; text-align: right; }
+    .add-cat-row select { width: auto; flex: 0 1 180px; min-width: 0; }
+    @media (max-width: 520px) {
+      .add-cat-row { flex-wrap: wrap; }
+      .add-cat-row #new-cat-name { flex-basis: 100%; }
+      .add-cat-row select { flex: 1; }
+    }
+
+    button.small { font-size: 14px; padding: 8px 12px; }
+    button.icon { padding: 6px 10px; background: transparent; color: var(--ink-dim); }
+
+    .add-cat { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--rule); }
+    .add-cat-title { font-size: 13px; color: var(--ink-dim); margin-bottom: 8px; }
+
+    .cat .remove { padding: 2px 6px; border: none; background: transparent; color: var(--ink-dim); font-size: 14px; }
+
+    .hidden { display: none; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Budget Smart</h1>
+      <p>Inserisci il tuo stipendio: l'assistente AI lo divide in categorie per aiutarti a risparmiare.</p>
+    </header>
+
+    <section class="card">
+      <h2>I tuoi dati</h2>
+      <div class="grid">
+        <div class="full income">
+          <label for="income">Stipendio / budget mensile netto (€)</label>
+          <input id="income" type="number" inputmode="decimal" min="0" step="50" placeholder="es. 1800">
+        </div>
+        <div>
+          <label for="rent">Affitto o mutuo (€)</label>
+          <input id="rent" type="number" inputmode="decimal" min="0" placeholder="0">
+        </div>
+        <div>
+          <label for="bills">Bollette e utenze (€, se le sai)</label>
+          <input id="bills" type="number" inputmode="decimal" min="0" placeholder="stima automatica">
+        </div>
+        <div>
+          <label for="debt">Rate / debiti mensili (€)</label>
+          <input id="debt" type="number" inputmode="decimal" min="0" placeholder="0">
+        </div>
+        <div>
+          <label for="people">Persone in famiglia</label>
+          <input id="people" type="number" inputmode="numeric" min="1" value="1">
+        </div>
+        <div class="full">
+          <label>Altri costi fissi mensili (assicurazioni, palestra, telefono, asilo…)</label>
+          <div id="fixed-list"></div>
+          <button type="button" id="add-fixed" class="small">+ Aggiungi costo fisso</button>
+        </div>
+        <div class="full">
+          <label for="goal">Obiettivo di risparmio o note (facoltativo)</label>
+          <textarea id="goal" placeholder="es. voglio mettere da parte 3.000 € per un viaggio entro un anno, ho un'auto, lavoro da casa…"></textarea>
+        </div>
+      </div>
+
+      <details id="ai-settings">
+        <summary>Impostazioni assistente AI</summary>
+        <div style="margin-top:10px">
+          <label for="apikey">Chiave API Anthropic</label>
+          <input id="apikey" type="password" autocomplete="off" placeholder="sk-ant-…">
+          <div class="hint">
+            La chiave resta salvata solo in questo browser e viene inviata soltanto a api.anthropic.com.
+            Senza chiave l'app usa un calcolo automatico basato sulla regola 50/30/20 adattata ai tuoi dati.
+          </div>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button class="primary" id="go" type="button">Suddividi il mio budget</button>
+        <button id="reset" type="button">Ricomincia</button>
+      </div>
+      <div class="status" id="status" role="status"></div>
+    </section>
+
+    <section class="card hidden" id="result">
+      <h2>Il tuo piano mensile</h2>
+      <p class="summary" id="summary"></p>
+      <div class="kpis">
+        <div class="kpi needs"><div class="k">Necessità</div><div class="v" id="k-needs"></div></div>
+        <div class="kpi wants"><div class="k">Desideri</div><div class="v" id="k-wants"></div></div>
+        <div class="kpi save"><div class="k">Risparmio</div><div class="v" id="k-save"></div></div>
+      </div>
+      <div class="bar" id="bar" aria-hidden="true"></div>
+      <div id="groups"></div>
+      <div class="add-cat">
+        <div class="add-cat-title">Aggiungi una categoria</div>
+        <div class="add-cat-row">
+          <input id="new-cat-name" type="text" placeholder="Nome (es. Assicurazione auto)" aria-label="Nome categoria">
+          <select id="new-cat-group" aria-label="Gruppo">
+            <option value="necessita">Necessità / costo fisso</option>
+            <option value="desideri">Desideri</option>
+            <option value="risparmio">Risparmio</option>
+          </select>
+          <input id="new-cat-amount" type="number" inputmode="decimal" min="0" step="5" placeholder="€" aria-label="Importo">
+          <button type="button" id="add-cat-btn">Aggiungi</button>
+        </div>
+      </div>
+      <div class="unassigned" id="unassigned"></div>
+      <div class="source" id="source"></div>
+    </section>
+
+    <section class="card hidden" id="tips-card">
+      <h2>Consigli per risparmiare</h2>
+      <ul class="tips" id="tips"></ul>
+      <p class="source" id="yearly"></p>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const STORAGE_KEY = "budget-smart-v1";
+      const KEY_STORAGE = "budget-smart-apikey";
+      const MODEL = "claude-opus-5";
+
+      const GROUPS = {
+        necessita: { label: "Necessità", color: "var(--needs)", sub: "spese indispensabili" },
+        desideri: { label: "Desideri", color: "var(--wants)", sub: "svago e piaceri" },
+        risparmio: { label: "Risparmio", color: "var(--save)", sub: "il tuo futuro" }
+      };
+
+      const eur = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+      const $ = id => document.getElementById(id);
+      const num = id => Math.max(0, parseFloat($(id).value) || 0);
+
+      // plan = { income, summary, categories:[{name, group, amount, tip, spent}], tips:[], source }
+      let plan = null;
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      }
+
+      function readInputs() {
+        return {
+          income: num("income"),
+          rent: num("rent"),
+          bills: num("bills"),
+          debt: num("debt"),
+          people: Math.max(1, Math.round(num("people")) || 1),
+          goal: $("goal").value.trim(),
+          fixed: readFixed()
+        };
+      }
+
+      // ---- Costi fissi personalizzati ----
+      function addFixedRow(name, amount) {
+        const row = document.createElement("div");
+        row.className = "fixed-row";
+        row.innerHTML = `
+          <input class="fx-name" type="text" placeholder="Nome (es. Palestra)" aria-label="Nome costo fisso">
+          <input class="fx-amount" type="number" inputmode="decimal" min="0" placeholder="€" aria-label="Importo costo fisso">
+          <button type="button" class="icon" aria-label="Rimuovi costo fisso">✕</button>`;
+        row.querySelector(".fx-name").value = name || "";
+        row.querySelector(".fx-amount").value = amount || "";
+        row.querySelector("button").addEventListener("click", () => { row.remove(); save(); });
+        $("fixed-list").appendChild(row);
+        return row;
+      }
+
+      function readFixed() {
+        return Array.from(document.querySelectorAll("#fixed-list .fixed-row"))
+          .map(r => ({
+            name: r.querySelector(".fx-name").value.trim(),
+            amount: Math.max(0, parseFloat(r.querySelector(".fx-amount").value) || 0)
+          }))
+          .filter(f => f.name && f.amount > 0);
+      }
+
+      $("add-fixed").addEventListener("click", () => addFixedRow().querySelector(".fx-name").focus());
+      $("fixed-list").addEventListener("change", save);
+
+      function save() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ inputs: readInputs(), plan }));
+        } catch (e) { /* storage non disponibile */ }
+      }
+
+      function load() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const data = JSON.parse(raw);
+            const i = data.inputs || {};
+            ["income", "rent", "bills", "debt", "people", "goal"].forEach(k => {
+              if (i[k] !== undefined && i[k] !== 0 && i[k] !== "") $(k).value = i[k];
+            });
+            (i.fixed || []).forEach(f => addFixedRow(f.name, f.amount));
+            if (data.plan && Array.isArray(data.plan.categories)) plan = data.plan;
+          }
+          $("apikey").value = localStorage.getItem(KEY_STORAGE) || "";
+        } catch (e) { /* nessun dato salvato */ }
+      }
+
+      function setStatus(msg, isError) {
+        const s = $("status");
+        s.textContent = msg || "";
+        s.classList.toggle("error", !!isError);
+      }
+
+      // ---- Suddivisione automatica (senza AI) ----
+      function localPlan(d) {
+        const I = d.income;
+        const r = x => Math.round(x / 5) * 5;
+        const cats = [];
+        // exact = importo inserito dall'utente, da non arrotondare
+        const add = (name, group, amount, tip, exact) => {
+          if (amount > 0) cats.push({ name, group, amount: exact ? Math.round(amount) : r(amount), tip });
+        };
+
+        const bills = d.bills || Math.min(I * 0.07, 90 + 40 * d.people);
+        const food = Math.min(Math.max(200 * d.people, I * 0.10), I * 0.20);
+        const transport = I * 0.06;
+        const health = I * 0.03;
+        const fixed = d.rent + bills + d.debt + d.fixed.reduce((a, f) => a + f.amount, 0);
+        const variable = food + transport + health;
+        let needs = fixed + variable;
+
+        // Se le necessità superano il 90% dello stipendio, riduci le voci variabili
+        let scale = 1;
+        if (needs > I * 0.9 && variable > 0) {
+          scale = Math.max(0.5, (I * 0.9 - fixed) / variable);
+          needs = fixed + variable * scale;
+        }
+
+        add("Casa (affitto/mutuo)", "necessita", d.rent, "Idealmente non più del 30% dello stipendio.", true);
+        add("Bollette e utenze", "necessita", bills, "Confronta le offerte luce e gas una volta l'anno.", !!d.bills);
+        add("Rate e debiti", "necessita", d.debt, "Estingui prima i debiti con il tasso più alto.", true);
+        d.fixed.forEach(f => add(f.name, "necessita", f.amount, "Costo fisso inserito da te: verifica se puoi rinegoziarlo.", true));
+        add("Spesa alimentare", "necessita", food * scale, "Fai la lista e pianifica i pasti della settimana.");
+        add("Trasporti", "necessita", transport * scale, "Valuta abbonamenti ai mezzi o car pooling.");
+        add("Salute e cura personale", "necessita", health * scale, "Tieni da parte qualcosa per visite e farmaci.");
+
+        const remaining = Math.max(0, I - needs);
+        const target = I < 1500 ? 0.10 : I < 2500 ? 0.15 : I < 4000 ? 0.20 : 0.25;
+        let savings = Math.min(I * target, remaining * 0.6);
+        let wants = remaining - savings;
+        if (wants > I * 0.30) { savings += wants - I * 0.30; wants = I * 0.30; }
+
+        add("Ristoranti e uscite", "desideri", wants * 0.40, "Fissa un numero di uscite al mese.");
+        add("Shopping", "desideri", wants * 0.25, "Aspetta 48 ore prima degli acquisti non essenziali.");
+        add("Abbonamenti e streaming", "desideri", wants * 0.10, "Disdici quelli che non usi da un mese.");
+        add("Viaggi e hobby", "desideri", wants * 0.25, "Prenota in anticipo per risparmiare.");
+
+        const hasGoal = d.goal.length > 0;
+        add("Fondo emergenze", "risparmio", savings * (hasGoal ? 0.45 : 0.6), "Obiettivo: 3–6 mesi di spese.");
+        add("Investimenti e pensione", "risparmio", savings * (hasGoal ? 0.25 : 0.4), "Automatizza un bonifico il giorno dello stipendio.");
+        if (hasGoal) add("Il tuo obiettivo", "risparmio", savings * 0.30, d.goal.slice(0, 120));
+
+        fixRounding(cats, I);
+
+        const tips = [
+          "Paga prima te stesso: sposta il risparmio su un conto separato appena arriva lo stipendio.",
+          "Registra le spese reali qui sotto per capire dove sfora il budget.",
+          "Rivedi il piano ogni mese e aumenta il risparmio del 1% quando puoi."
+        ];
+        if (needs > I * 0.9) tips.unshift("Le spese fisse sono molto alte rispetto allo stipendio: prova a ridurre casa o rate, o ad aumentare le entrate.");
+
+        return {
+          income: I,
+          summary: `Suddivisione automatica: circa ${Math.round(sum(cats, "necessita") / I * 100)}% necessità, ` +
+            `${Math.round(sum(cats, "desideri") / I * 100)}% desideri e ${Math.round(sum(cats, "risparmio") / I * 100)}% risparmio.`,
+          categories: cats,
+          tips,
+          source: "Calcolo automatico (regola 50/30/20 adattata). Aggiungi una chiave API per un piano personalizzato con l'AI."
+        };
+      }
+
+      // Fa quadrare il totale con lo stipendio aggiustando la voce di risparmio più grande
+      function fixRounding(cats, income) {
+        const total = cats.reduce((a, c) => a + c.amount, 0);
+        const diff = Math.round(income - total);
+        if (diff === 0 || cats.length === 0) return;
+        const target = cats.filter(c => c.group === "risparmio").sort((a, b) => b.amount - a.amount)[0] || cats[cats.length - 1];
+        target.amount = Math.max(0, target.amount + diff);
+      }
+
+      function sum(cats, group) {
+        return cats.filter(c => !group || c.group === group).reduce((a, c) => a + (c.amount || 0), 0);
+      }
+
+      // ---- Suddivisione con AI (Claude) ----
+      async function aiPlan(d, apiKey) {
+        const schema = {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            categories: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  group: { type: "string", enum: ["necessita", "desideri", "risparmio"] },
+                  amount: { type: "number" },
+                  tip: { type: "string" }
+                },
+                required: ["name", "group", "amount", "tip"],
+                additionalProperties: false
+              }
+            },
+            tips: { type: "array", items: { type: "string" } }
+          },
+          required: ["summary", "categories", "tips"],
+          additionalProperties: false
+        };
+
+        const prompt =
+          `Sei un consulente di finanza personale. Suddividi il budget mensile di questa persona in categorie di spesa ` +
+          `in modo realistico, con l'obiettivo principale di aiutarla a risparmiare.\n\n` +
+          `Dati:\n` +
+          `- Entrate nette mensili: ${d.income} €\n` +
+          `- Affitto/mutuo: ${d.rent} €\n` +
+          `- Bollette e utenze: ${d.bills ? d.bills + " €" : "non indicate, stimale tu"}\n` +
+          `- Rate/debiti mensili: ${d.debt} €\n` +
+          `- Altri costi fissi mensili: ${d.fixed.length ? d.fixed.map(f => `${f.name} ${f.amount} €`).join("; ") : "nessuno"}\n` +
+          `- Persone in famiglia: ${d.people}\n` +
+          `- Obiettivi e note: ${d.goal || "nessuno"}\n\n` +
+          `Regole:\n` +
+          `- Rispondi in italiano.\n` +
+          `- Usa tra 8 e 14 categorie, ognuna con gruppo "necessita", "desideri" o "risparmio".\n` +
+          `- Gli importi fissi indicati (affitto, bollette se date, rate, altri costi fissi) vanno riportati esattamente, ` +
+          `ognuno come categoria "necessita" separata con lo stesso nome indicato.\n` +
+          `- La somma degli importi deve essere esattamente ${d.income} €. Arrotonda gli importi ai 5 €.\n` +
+          `- Se ci sono obiettivi, crea una categoria di risparmio dedicata con un importo che li renda raggiungibili, ` +
+          `se possibile.\n` +
+          `- "tip" è un consiglio pratico e breve (max 20 parole) per quella categoria.\n` +
+          `- "summary" spiega in 2-3 frasi la logica del piano.\n` +
+          `- "tips" contiene 3-5 consigli concreti e personalizzati per risparmiare di più.`;
+
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "server-side-fallback-2026-07-01",
+            "anthropic-dangerous-direct-browser-access": "true"
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 16000,
+            thinking: { type: "adaptive" },
+            output_config: { effort: "medium", format: { type: "json_schema", schema } },
+            fallbacks: "default",
+            messages: [{ role: "user", content: prompt }]
+          })
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg = (data.error && data.error.message) || res.statusText;
+          if (res.status === 401) throw new Error("Chiave API non valida.");
+          if (res.status === 429) throw new Error("Troppe richieste, riprova tra poco.");
+          throw new Error(`Errore API (${res.status}): ${msg}`);
+        }
+        if (data.stop_reason === "refusal") throw new Error("L'AI non ha potuto elaborare la richiesta.");
+        if (data.stop_reason === "max_tokens") throw new Error("Risposta dell'AI incompleta, riprova.");
+
+        const textBlock = (data.content || []).find(b => b.type === "text");
+        if (!textBlock) throw new Error("Risposta dell'AI vuota.");
+        const out = JSON.parse(textBlock.text);
+
+        const cats = out.categories
+          .filter(c => c && GROUPS[c.group] && c.amount >= 0)
+          .map(c => ({ name: c.name, group: c.group, amount: Math.round(c.amount), tip: c.tip }));
+        if (cats.length === 0) throw new Error("L'AI non ha restituito categorie valide.");
+        fixRounding(cats, d.income);
+
+        return {
+          income: d.income,
+          summary: out.summary,
+          categories: cats,
+          tips: out.tips,
+          source: "Piano creato con l'assistente AI (Claude). Puoi modificare liberamente ogni importo."
+        };
+      }
+
+      // ---- Visualizzazione ----
+      function render() {
+        if (!plan) {
+          $("result").classList.add("hidden");
+          $("tips-card").classList.add("hidden");
+          return;
+        }
+        $("result").classList.remove("hidden");
+        $("tips-card").classList.remove("hidden");
+
+        const I = plan.income;
+        const pct = v => I > 0 ? Math.round(v / I * 100) : 0;
+
+        $("summary").textContent = plan.summary;
+        $("k-needs").textContent = eur.format(sum(plan.categories, "necessita"));
+        $("k-wants").textContent = eur.format(sum(plan.categories, "desideri"));
+        $("k-save").textContent = eur.format(sum(plan.categories, "risparmio"));
+
+        $("bar").innerHTML = Object.keys(GROUPS).map(g => {
+          const v = sum(plan.categories, g);
+          return v > 0 ? `<span style="flex:${v};background:${GROUPS[g].color}"></span>` : "";
+        }).join("");
+
+        let html = "";
+        Object.keys(GROUPS).forEach(g => {
+          const items = plan.categories.map((c, i) => ({ c, i })).filter(x => x.c.group === g);
+          if (items.length === 0) return;
+          const total = sum(plan.categories, g);
+          html += `<div class="group-title" style="color:${GROUPS[g].color}">
+            <span>${GROUPS[g].label} · ${pct(total)}%</span><span class="sub">${GROUPS[g].sub}</span></div>`;
+          items.forEach(({ c, i }) => {
+            const spent = c.spent || 0;
+            const ratio = c.amount > 0 ? Math.min(100, spent / c.amount * 100) : (spent > 0 ? 100 : 0);
+            const over = spent > c.amount;
+            const label = g === "risparmio" ? "Messo da parte" : "Speso";
+            html += `<div class="cat" style="--c:${GROUPS[g].color}">
+              <div class="cat-row">
+                <div class="cat-name">${escapeHtml(c.name)}</div>
+                <div class="cat-pct">${pct(c.amount)}%</div>
+                <input class="amount" type="number" inputmode="decimal" min="0" step="5" value="${c.amount}"
+                  data-i="${i}" data-field="amount" aria-label="Importo per ${escapeHtml(c.name)}">
+                <button type="button" class="remove" data-remove="${i}" aria-label="Rimuovi ${escapeHtml(c.name)}">✕</button>
+              </div>
+              ${c.tip ? `<div class="tip">${escapeHtml(c.tip)}</div>` : ""}
+              <div class="spent-row">
+                <span>${label}</span>
+                <input type="number" inputmode="decimal" min="0" value="${spent || ""}" placeholder="0"
+                  data-i="${i}" data-field="spent" aria-label="${label} per ${escapeHtml(c.name)}">
+                <div class="progress ${over && g !== "risparmio" ? "over" : ""}"><i style="width:${ratio}%"></i></div>
+                <span>${over && g !== "risparmio" ? "+" + eur.format(spent - c.amount) : eur.format(Math.max(0, c.amount - spent)) + " rest."}</span>
+              </div>
+            </div>`;
+          });
+        });
+        $("groups").innerHTML = html;
+
+        const left = Math.round(I - sum(plan.categories));
+        const u = $("unassigned");
+        u.classList.toggle("bad", left < 0);
+        u.textContent = left === 0 ? "✓ Tutto lo stipendio è assegnato."
+          : left > 0 ? `Ancora da assegnare: ${eur.format(left)} (spostali nel risparmio!)`
+            : `Hai assegnato ${eur.format(-left)} in più dello stipendio.`;
+        $("source").textContent = plan.source;
+
+        $("tips").innerHTML = (plan.tips || []).map(t => `<li>${escapeHtml(t)}</li>`).join("");
+        const saved = sum(plan.categories, "risparmio");
+        $("yearly").textContent = saved > 0
+          ? `Seguendo questo piano metti da parte ${eur.format(saved)} al mese, cioè ${eur.format(saved * 12)} in un anno.`
+          : "";
+      }
+
+      // Aggiorna solo i numeri senza ridisegnare il campo che si sta modificando
+      $("groups").addEventListener("change", e => {
+        const el = e.target;
+        if (!el.dataset.field) return;
+        const c = plan.categories[+el.dataset.i];
+        c[el.dataset.field] = Math.max(0, parseFloat(el.value) || 0);
+        save();
+        render();
+      });
+
+      $("groups").addEventListener("click", e => {
+        const btn = e.target.closest("[data-remove]");
+        if (!btn) return;
+        const c = plan.categories[+btn.dataset.remove];
+        if (!confirm(`Rimuovere la categoria "${c.name}"?`)) return;
+        plan.categories.splice(+btn.dataset.remove, 1);
+        save();
+        render();
+      });
+
+      $("add-cat-btn").addEventListener("click", () => {
+        const name = $("new-cat-name").value.trim();
+        if (!name) { $("new-cat-name").focus(); return; }
+        plan.categories.push({
+          name,
+          group: $("new-cat-group").value,
+          amount: Math.max(0, parseFloat($("new-cat-amount").value) || 0),
+          tip: ""
+        });
+        $("new-cat-name").value = "";
+        $("new-cat-amount").value = "";
+        save();
+        render();
+      });
+      ["new-cat-name", "new-cat-amount"].forEach(id => $(id).addEventListener("keydown", e => {
+        if (e.key === "Enter") $("add-cat-btn").click();
+      }));
+
+      $("go").addEventListener("click", async () => {
+        const d = readInputs();
+        if (d.income <= 0) { setStatus("Inserisci il tuo stipendio mensile.", true); $("income").focus(); return; }
+
+        const apiKey = $("apikey").value.trim();
+        try { localStorage.setItem(KEY_STORAGE, apiKey); } catch (e) { /* ignora */ }
+
+        const btn = $("go");
+        btn.disabled = true;
+        try {
+          if (apiKey) {
+            setStatus("L'assistente AI sta preparando il tuo piano…");
+            try {
+              plan = await aiPlan(d, apiKey);
+              setStatus("");
+            } catch (err) {
+              plan = localPlan(d);
+              setStatus(`${err.message} Ho usato il calcolo automatico.`, true);
+            }
+          } else {
+            plan = localPlan(d);
+            setStatus("");
+          }
+          save();
+          render();
+          $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      $("reset").addEventListener("click", () => {
+        if (!confirm("Cancellare dati e piano?")) return;
+        ["income", "rent", "bills", "debt", "goal"].forEach(k => $(k).value = "");
+        $("people").value = 1;
+        $("fixed-list").innerHTML = "";
+        plan = null;
+        save();
+        render();
+        setStatus("");
+      });
+
+      load();
+      render();
+    })();
+  </script>
+</body>
+
+</html>
