@@ -309,6 +309,14 @@
     .fx-form #fx-new-name { flex: 1; }
     .fx-form #fx-new-amount { flex: 0 0 100px; text-align: right; }
 
+    /* ---- Suggerimento tetto ---- */
+    .cap-advice { margin-top: 10px; padding: 12px; border-radius: 12px; border: 1px solid var(--rule); background: var(--surface-2); }
+    .cap-advice .ca-value { font-size: 26px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .cap-advice .ca-sub { font-size: 12px; color: var(--ink-dim); }
+    .cap-advice p { margin: 8px 0 0; font-size: 14px; }
+    .cap-advice ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+    .cap-advice .actions { margin-top: 10px; }
+
     /* ---- Tetto settimanale ---- */
     .week { --lvl: var(--save); border-radius: 14px; padding: 16px; margin-top: 18px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow); }
     .week.mid { --lvl: var(--wants); }
@@ -395,6 +403,9 @@
           <label for="weekly-cap">Tetto settimanale per le spese variabili (€)</label>
           <input id="weekly-cap" type="text" inputmode="decimal" autocomplete="off">
         </div>
+        <button type="button" id="cap-suggest" class="small" style="margin-top:10px;width:100%">✨ Chiedi all'assistente quanto mettere</button>
+        <div class="status" id="cap-status" role="status"></div>
+        <div class="cap-advice hidden" id="cap-advice"></div>
         <div class="cat-edit-head"><span>Categoria</span><span>Tetto €/mese</span><span></span></div>
         <div id="cat-edit-list"></div>
         <div class="cat-edit-row">
@@ -1587,6 +1598,166 @@
         $("cat-editor").open = true;
         $("weekly-cap").scrollIntoView({ behavior: "smooth", block: "center" });
         $("weekly-cap").focus();
+      });
+
+
+      // ---- Suggerimento del tetto settimanale (l'utente decide se applicarlo) ----
+      // Totali delle ultime settimane (lun–dom), da quando esistono spese registrate
+      function weeklyHistory(maxWeeks = 8) {
+        const w = currentWeek();
+        const [y, m, d] = w.start.split("-").map(Number);
+        const first = log.expenses.reduce((a, e) => (a && a < e.date ? a : e.date), null);
+        const weeks = [];
+        for (let i = 0; i < maxWeeks; i++) {
+          const start = isoOf(new Date(y, m - 1, d - 7 * i));
+          const end = isoOf(new Date(y, m - 1, d - 7 * i + 6));
+          if (!first || end < first) break;
+          const total = log.expenses.filter(e => e.date >= start && e.date <= end).reduce((a, e) => a + e.amount, 0);
+          weeks.push({ start, end, total, current: i === 0 });
+        }
+        return weeks;
+      }
+
+      // Stima senza AI: tetto sostenibile dal bilancio + tetto basato sulle abitudini
+      function localCapAdvice() {
+        const fixed = log.fixedCosts.reduce((a, f) => a + f.amount, 0);
+        const weeks = weeklyHistory();
+        const done = weeks.filter(x => !x.current);
+        const avg = done.length ? done.reduce((a, x) => a + x.total, 0) / done.length : null;
+        const round5 = x => Math.max(5, Math.round(x / 5) * 5);
+        // Dopo i costi fissi, almeno il 20% dello stipendio va nel risparmio
+        const sustainable = log.salary > 0 ? round5(Math.max(0, log.salary - fixed - log.salary * 0.2) * 12 / 52) : null;
+        let cap, reason;
+        if (avg !== null && avg > 0) {
+          cap = round5(avg * 0.9);
+          if (sustainable !== null) cap = Math.min(cap, sustainable);
+          reason = `Nelle ultime ${done.length} settimane hai speso in media ${eur2.format(avg)}. ` +
+            `Il tetto è circa il 10% in meno, per risparmiare senza cambiare troppo le tue abitudini.`;
+        } else if (sustainable !== null) {
+          // Senza abitudini da osservare non si alza il tetto: si resta sul valore attuale, se sostenibile
+          cap = Math.min(log.weeklyCap, sustainable);
+          reason = `Non ci sono ancora settimane complete registrate, quindi ti consiglio di partire da ` +
+            `${eur2.format(cap)}. Riprova dopo qualche settimana: il consiglio si baserà su quanto spendi davvero.`;
+        } else {
+          return null;
+        }
+        const tips = [];
+        if (sustainable !== null) tips.push(`Massimo sostenibile con il tuo stipendio: ${eur2.format(sustainable)} a settimana.`);
+        tips.push("Le entrate extra non sono incluse: restano da mettere da parte.");
+        return { cap, reason, tips, source: "Stima automatica. Con la chiave API (Pianificatore → Impostazioni assistente AI) il consiglio lo dà l'AI." };
+      }
+
+      async function aiCapAdvice(apiKey) {
+        const schema = {
+          type: "object",
+          properties: {
+            suggested_cap: { type: "number" },
+            reasoning: { type: "string" },
+            tips: { type: "array", items: { type: "string" } }
+          },
+          required: ["suggested_cap", "reasoning", "tips"],
+          additionalProperties: false
+        };
+        const month = todayISO().slice(0, 7);
+        const prev = shiftMonth(month, -1);
+        const catTotals = m => log.categories.map(c => {
+          const v = log.expenses.filter(e => e.catId === c.id && e.date.slice(0, 7) === m).reduce((a, e) => a + e.amount, 0);
+          return v ? `${c.name} ${v.toFixed(2)} €` + (c.cap ? ` (tetto mensile ${c.cap} €)` : "") : null;
+        }).filter(Boolean).join("; ") || "nessuna spesa";
+        const weeks = weeklyHistory();
+        const extraAvg = [0, 1, 2].map(k => shiftMonth(month, -k))
+          .map(m => log.incomes.filter(e => e.date.slice(0, 7) === m).reduce((a, e) => a + e.amount, 0));
+        const goal = ($("goal") && $("goal").value.trim()) || "";
+        const prompt =
+          `Sei un consulente di finanza personale. Consiglia a questa persona un tetto SETTIMANALE per le spese ` +
+          `variabili (cibo fuori, benzina, spesa, svago, shopping…), con l'obiettivo di aiutarla a risparmiare ` +
+          `restando realistico rispetto alle sue abitudini. La settimana va da lunedì a domenica.\n\n` +
+          `Dati:\n` +
+          `- Stipendio netto mensile: ${log.salary ? log.salary + " €" : "non indicato"}\n` +
+          `- Vive con la famiglia: non paga affitto né bollette.\n` +
+          `- Costi fissi mensili (esclusi dal tetto): ` +
+          (log.fixedCosts.length ? log.fixedCosts.map(f => `${f.name} ${f.amount} €`).join("; ") : "nessuno") + `\n` +
+          `- Entrate extra degli ultimi 3 mesi (da mettere da parte, NON vanno usate per alzare il tetto): ` +
+          extraAvg.map(v => v.toFixed(2) + " €").join(", ") + `\n` +
+          `- Tetto settimanale attuale: ${log.weeklyCap} €\n` +
+          `- Spesa variabile per settimana, dalla più recente: ` +
+          (weeks.length ? weeks.map(w => `${w.start}→${w.end}: ${w.total.toFixed(2)} €${w.current ? " (settimana in corso)" : ""}`).join("; ") : "nessun dato") + `\n` +
+          `- Per categoria, mese in corso: ${catTotals(month)}\n` +
+          `- Per categoria, mese precedente: ${catTotals(prev)}\n` +
+          (goal ? `- Obiettivi: ${goal}\n` : "") +
+          `\nRegole:\n` +
+          `- Rispondi in italiano, tono amichevole e diretto.\n` +
+          `- "suggested_cap": tetto settimanale consigliato in euro, arrotondato ai 5 €. Non deve superare quanto resta ` +
+          `dello stipendio dopo i costi fissi e un risparmio ragionevole.\n` +
+          `- "reasoning": 2-3 frasi che spiegano il numero usando i dati (medie, settimane sopra o sotto il tetto).\n` +
+          `- "tips": 2-3 consigli pratici e brevi per rispettarlo, legati alle categorie in cui spende di più.\n` +
+          `- Se ci sono pochi dati, dillo e dai comunque una stima prudente.`;
+        const out = await callClaude(prompt, schema, apiKey);
+        const cap = Math.round(out.suggested_cap / 5) * 5;
+        if (!(cap > 0)) throw new Error("L'AI non ha dato un tetto valido.");
+        return { cap, reason: out.reasoning, tips: out.tips || [], source: "Consiglio dell'assistente AI (Claude). Decidi tu se applicarlo." };
+      }
+
+      let capAdvice = null;
+      function renderCapAdvice() {
+        const box = $("cap-advice");
+        box.classList.toggle("hidden", !capAdvice);
+        if (!capAdvice) return;
+        const same = capAdvice.cap === log.weeklyCap;
+        box.innerHTML = `
+          <div class="ca-sub">Tetto consigliato</div>
+          <div class="ca-value">${eur2.format(capAdvice.cap)} <span class="ca-sub">a settimana</span></div>
+          <p>${escapeHtml(capAdvice.reason)}</p>
+          ${capAdvice.tips.length ? `<ul>${capAdvice.tips.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
+          <div class="actions">
+            ${same ? `<span class="ca-sub">È già il tuo tetto attuale.</span>`
+              : `<button type="button" class="primary" id="cap-apply">Applica ${eur2.format(capAdvice.cap)}</button>`}
+            <button type="button" id="cap-dismiss">${same ? "Chiudi" : `Lascia ${eur2.format(log.weeklyCap)}`}</button>
+          </div>
+          <p class="ca-sub">${escapeHtml(capAdvice.source)}</p>`;
+      }
+
+      $("cap-suggest").addEventListener("click", async () => {
+        const st = $("cap-status");
+        let apiKey = "";
+        try { apiKey = ($("apikey") && $("apikey").value.trim()) || localStorage.getItem(KEY_STORAGE) || ""; } catch (e) { /* ignora */ }
+        const btn = $("cap-suggest");
+        btn.disabled = true;
+        try {
+          if (apiKey) {
+            st.textContent = "L'assistente sta guardando le tue spese…";
+            try {
+              capAdvice = await aiCapAdvice(apiKey);
+              st.textContent = "";
+            } catch (err) {
+              capAdvice = localCapAdvice();
+              st.textContent = `${err.message} Ho usato la stima automatica.`;
+            }
+          } else {
+            capAdvice = localCapAdvice();
+            st.textContent = "";
+          }
+          if (!capAdvice) st.textContent = "Imposta lo stipendio nelle Entrate o registra qualche settimana di spese per avere un consiglio.";
+          renderCapAdvice();
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      $("cap-advice").addEventListener("click", e => {
+        if (e.target.id === "cap-apply" && capAdvice) {
+          log.weeklyCap = capAdvice.cap;
+          $("weekly-cap").value = String(log.weeklyCap).replace(".", ",");
+          $("cap-status").textContent = `Tetto aggiornato a ${eur2.format(log.weeklyCap)} ✓`;
+          capAdvice = null;
+          saveLog();
+          renderLog();
+          renderCapAdvice();
+        } else if (e.target.id === "cap-dismiss") {
+          capAdvice = null;
+          $("cap-status").textContent = "";
+          renderCapAdvice();
+        }
       });
 
       $("weekly-cap").addEventListener("change", () => {
