@@ -56,3 +56,30 @@ def test_aggiorna_ical_non_tocca_manuali_ne_assistente(conn):
     # un evento ical rimosso dal calendario sparisce al prossimo aggiornamento
     db.sostituisci_ical(conn, ev[:1], da, a)
     assert sorted(i["origine"] for i in db.impegni(conn)) == ["assistente", "ical", "manuale"]
+
+
+def test_scadenza_non_cambia_senza_motivo(conn):
+    f = db.crea_fronte(conn, "Paper", "2026-10-15", "parole", 7500)
+    for motivo in ("", "   ", None):
+        with pytest.raises(ValueError):
+            db.cambia_scadenza(conn, f, "2026-10-30", motivo)
+    assert db.fronte(conn, f)["scadenza"] == "2026-10-15"
+    assert db.rinvii(conn) == []
+
+
+def test_ogni_cambio_di_scadenza_compare_nei_rinvii(conn):
+    f = db.crea_fronte(conn, "Paper", "2026-10-15", "parole", 7500)
+    db.cambia_scadenza(conn, f, "2026-10-30", "Turni extra al lavoro")
+    db.cambia_scadenza(conn, f, "2026-11-10", "Revisione del relatore")
+    r = db.rinvii(conn, f)
+    assert [(x["vecchia_scadenza"], x["nuova_scadenza"]) for x in r] == [
+        ("2026-10-15", "2026-10-30"), ("2026-10-30", "2026-11-10")]
+    assert db.conta_rinvii(conn) == {f: 2}
+    assert db.fronte(conn, f)["scadenza"] == "2026-11-10"
+
+
+def test_backup(conn, tmp_path):
+    db.crea_fronte(conn, "Paper", "2026-10-15", "parole", 7500)
+    dest = db.esporta_backup(conn, tmp_path / "bk")
+    copia = db.connetti(dest)
+    assert db.fronti(copia)[0]["nome"] == "Paper"
