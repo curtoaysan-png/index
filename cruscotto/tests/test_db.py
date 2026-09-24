@@ -140,3 +140,37 @@ def test_seed_se_vuoto(tmp_path, monkeypatch):
     seed.main()
     seed.main()  # seconda volta: nessun errore, nessun duplicato
     assert len(db.fronti(db.connetti(), solo_attivi=False)) == 4
+
+
+def test_backup_dal_pc_ripristinato_nel_cloud(conn, tmp_path):
+    # dati sul "PC" (SQLite)
+    pc = db.connetti(tmp_path / "pc.db")
+    f = db.crea_fronte(pc, "Paper", "2026-10-15", "parole", 7500, 1300)
+    s = db.avvia_sessione(pc, f, 90)
+    db.chiudi_sessione(pc, s, 200, SPIEGAZIONE, "Riparto da Conrad", domande=["Perché?"])
+    db.cambia_scadenza(pc, f, "2026-10-30", "Turni extra")
+    db.salva_impegno(pc, "Turno", "turno", "2026-09-23T17:00:00", "2026-09-23T22:00:00", "settimanale")
+    db.aggiungi_acquisto(pc, "Cuffie", 89.9, "tecnologia")
+    db.aggiungi_fonte(pc, f, "Osterhammel", "solo citato")
+    db.salva_preferenze(pc, testo_regole="Regole mie")
+    contenuto = db.backup_in_byte(pc)
+
+    # dati vecchi nella destinazione: vengono sostituiti
+    db.crea_fronte(conn, "Da cancellare", "2027-01-01", "x", 1)
+    db.ripristina_backup(conn, contenuto)
+    assert [x["nome"] for x in db.fronti(conn)] == ["Paper"]
+    assert db.fronte(conn, f)["attuale"] == 1500
+    assert db.ultime_domande(conn, f) == ["Perché?"]
+    assert len(db.rinvii(conn)) == 1
+    assert db.impegni(conn)[0]["ricorrenza"] == "settimanale"
+    assert db.acquisti(conn)[0]["prezzo"] == pytest.approx(89.9)
+    assert db.fonti(conn)[0]["stato"] == "solo citato"
+    assert db.preferenze(conn)["testo_regole"] == "Regole mie"
+    # dopo il ripristino i nuovi inserimenti non collidono con gli id copiati
+    nuovo = db.crea_fronte(conn, "Tesi", "2027-02-28", "capitoli", 6)
+    assert nuovo > f
+
+
+def test_ripristino_file_non_valido(conn):
+    with pytest.raises(ValueError):
+        db.ripristina_backup(conn, b"non un database")

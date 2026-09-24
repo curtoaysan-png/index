@@ -53,6 +53,64 @@ Si apre il browser su `http://localhost:8501`. Dalla home una sessione parte con
 - Per ripristinare un backup: chiudi l'app e copia il file al posto di `cruscotto.db` nella
   cartella dei dati.
 
+## Usarlo anche dal telefono (online)
+
+L'app può girare online su **Streamlit Community Cloud** (gratuito) con i dati in un database
+**Postgres su Neon** (gratuito). Si apre da qualunque dispositivo, anche a PC spento, ed è protetta
+da una password. Lo stesso codice sul PC continua a usare il file locale finché non configuri nulla.
+
+### 1. Crea il database (Neon)
+1. Vai su **neon.tech** → **Sign up** → accedi con GitHub.
+2. **Create project**: nome `cruscotto`, regione **Europe (Frankfurt)**, Postgres di default.
+3. Nella schermata del progetto premi **Connect** e copia la **connection string**
+   (inizia con `postgresql://` e finisce con `sslmode=require`). Tienila per il passo 2.
+
+### 2. Pubblica l'app (Streamlit Community Cloud)
+1. Vai su **share.streamlit.io** → **Continue with GitHub** e autorizza l'accesso.
+2. **Create app** → *Deploy a public app from GitHub*:
+   - Repository: `curtoaysan-png/index`
+   - Branch: `main`
+   - Main file path: `cruscotto/app.py`
+   - App URL: un nome a scelta, ad esempio `cruscotto-tuonome`
+3. Apri **Advanced settings**:
+   - Python version: **3.12**
+   - **Secrets**: incolla, con i tuoi valori tra virgolette:
+     ```toml
+     DATABASE_URL = "postgresql://...la stringa copiata da Neon..."
+     CRUSCOTTO_PASSWORD = "una password che scegli tu"
+     ANTHROPIC_API_KEY = "sk-ant-..."   # facoltativa, per l'assistente
+     ```
+4. **Deploy**. Dopo qualche minuto l'app è online all'indirizzo scelto.
+
+I secrets restano su Streamlit, non finiscono su GitHub. Si possono cambiare dopo da
+**Manage app → Settings → Secrets**.
+
+### 3. Porta online i dati che hai sul PC
+1. Sul PC (app avviata con `avvia.bat`): **Preferenze e backup → Scarica backup**.
+2. Nell'app online: **Preferenze e backup → Ripristina da un backup** → scegli il file →
+   spunta la conferma → **Ripristina**.
+
+Se non hai dati sul PC, in Home c'è il pulsante **Crea i fronti iniziali**.
+
+### 4. Sul telefono
+1. Apri l'indirizzo dell'app e inserisci la password.
+2. Dopo l'accesso l'indirizzo contiene `?accesso=...`: aggiungi **quella** pagina alla schermata
+   Home (iPhone/Safari: **Condividi → Aggiungi alla schermata Home**; Android/Chrome:
+   **⋮ → Aggiungi a schermata Home**). Aprendola da lì non serve riscrivere la password.
+   Quel collegamento vale come la password: non condividerlo.
+3. Nel Calendario la vista **Lista** è la più comoda sul telefono.
+
+### Da sapere
+- Da quando usi l'app online, usa **solo quella** (anche dal PC, nel browser). La versione avviata
+  con `avvia.bat` ha un database separato: i dati non si sincronizzano tra le due.
+- Se l'app online non viene aperta per un po', Streamlit la mette in pausa: alla riapertura
+  compare un pulsante per risvegliarla (circa un minuto). Anche il database Neon si "addormenta"
+  dopo pochi minuti: il primo caricamento è un po' più lento.
+- Date e orari sono sempre in ora italiana, anche se il server è altrove.
+- Per il backup: **Preferenze e backup → Scarica backup** (un file da tenere dove vuoi, anche su
+  OneDrive). Cambiare la password: modifica `CRUSCOTTO_PASSWORD` nei secrets; il vecchio
+  collegamento sulla schermata Home smette di funzionare e va ricreato.
+
 ## Assistente (facoltativo)
 
 L'assistente usa l'API di Anthropic, che si paga a consumo, separatamente dall'abbonamento a Claude.
@@ -95,12 +153,15 @@ della sessione successiva sullo stesso fronte, accanto a "Da dove riparti". Il p
 
 ```bash
 python -m pytest
+# anche su Postgres:
+CRUSCOTTO_TEST_PG="postgresql://..." python -m pytest
 ```
 
 ## Struttura
 
 - `app.py`: avvio e navigazione
-- `db.py`: database e regole obbligatorie (chiusura sessione, motivo dei rinvii, 48 ore)
+- `db.py`: database (SQLite sul PC, Postgres online) e regole obbligatorie (chiusura sessione,
+  motivo dei rinvii, 48 ore), backup e ripristino
 - `logica.py`: calcoli testabili (ritmo, proiezione, ricorrenze, fasce libere, verifica del piano)
 - `assistente.py`, `prompts.py`: chiamata all'API
 - `componenti.py`: parti di interfaccia condivise
