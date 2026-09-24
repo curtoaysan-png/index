@@ -38,7 +38,8 @@ def num(n) -> str:
     if n is None:
         return "—"
     if isinstance(n, float) and not n.is_integer():
-        return f"{n:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        testo = f"{n:,.2f}".rstrip("0").rstrip(".")
+        return testo.replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{int(n):,}".replace(",", ".")
 
 
