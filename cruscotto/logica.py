@@ -313,6 +313,25 @@ def estrai_json(testo: str) -> dict:
     return dati
 
 
+def estrai_domande(testo: str) -> list[str]:
+    """Estrae le domande Feynman dal JSON della risposta. Solleva ValueError se non valido."""
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", testo.strip())
+    ini, fin = t.find("{"), t.rfind("}")
+    if ini == -1 or fin == -1:
+        raise ValueError("Nessun oggetto JSON nella risposta.")
+    try:
+        dati = json.loads(t[ini:fin + 1])
+    except json.JSONDecodeError as e:
+        raise ValueError(f"JSON non valido: {e}") from e
+    domande = dati.get("domande")
+    if not isinstance(domande, list):
+        raise ValueError("Manca l'elenco 'domande'.")
+    domande = [str(d).strip() for d in domande if str(d).strip()]
+    if not domande:
+        raise ValueError("Nessuna domanda.")
+    return domande[:3]
+
+
 def valida_blocchi(blocchi, occorrenze_occupate, nomi_fronti, da: datetime, a: datetime):
     """Scarta i blocchi non validi senza fidarsi del modello.
 

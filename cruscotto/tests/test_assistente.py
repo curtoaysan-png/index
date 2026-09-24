@@ -133,3 +133,56 @@ def test_piano_rifiutato_resta_registrato(conn):
     db.rifiuta_piano(conn, pid)
     assert db.piano(conn, pid)["stato"] == "rifiutato"
     assert db.impegni(conn) == []
+
+
+# ---------------------------------------------------------------- domande Feynman (v2)
+
+SPIEGAZIONE = ("Ho scritto il paragrafo sul concetto di connessione globale in Osterhammel. "
+               "Ho confrontato la sua periodizzazione con quella di Conrad. Ho fissato la tesi del capitolo.")
+
+
+def test_domande_feynman_solo_domande():
+    risposta = json.dumps({"domande": ["Cosa intendi per connessione globale?",
+                                       "Puoi fare un esempio concreto?",
+                                       "Perché la periodizzazione conta?", "Quarta di troppo?"]})
+    client = ClientFinto(["```json\n" + risposta + "\n```"])
+    domande = assistente.chiedi_domande("Paper", SPIEGAZIONE, client=client)
+    assert domande == ["Cosa intendi per connessione globale?", "Puoi fare un esempio concreto?",
+                       "Perché la periodizzazione conta?"]
+
+
+def test_domande_json_non_valido():
+    client = ClientFinto(["niente json", '{"domande": []}'])
+    with pytest.raises(assistente.ErroreAssistente):
+        assistente.chiedi_domande("Paper", SPIEGAZIONE, client=client)
+    assert client.chiamate == 2
+
+
+def test_domande_senza_chiave(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(assistente.ErroreAssistente, match="ANTHROPIC_API_KEY"):
+        assistente.chiedi_domande("Paper", SPIEGAZIONE)
+
+
+def test_domande_salvate_con_la_sessione(conn):
+    f = db.crea_fronte(conn, "Paper", "2026-10-15", "parole", 7500)
+    assert db.ultime_domande(conn, f) == []
+    s = db.avvia_sessione(conn, f, 90)
+    db.chiudi_sessione(conn, s, 200, SPIEGAZIONE, "Riparto da Conrad", domande=["Perché?", "Esempio?"])
+    assert db.ultime_domande(conn, f) == ["Perché?", "Esempio?"]
+    s = db.avvia_sessione(conn, f, 10)
+    db.chiudi_sessione(conn, s, 0, SPIEGAZIONE, "Riparto da Conrad")  # domande facoltative
+    assert db.ultime_domande(conn, f) == []
+
+
+def test_migrazione_database_vecchio(tmp_path):
+    import sqlite3
+    percorso = tmp_path / "vecchio.db"
+    vecchio = sqlite3.connect(percorso)
+    vecchio.execute("CREATE TABLE sessioni (id INTEGER PRIMARY KEY, fronte_id INTEGER NOT NULL, "
+                    "inizio TEXT NOT NULL, fine TEXT, durata_prevista_min INTEGER NOT NULL, "
+                    "output INTEGER, spiegazione TEXT, ripartenza TEXT)")
+    vecchio.commit()
+    vecchio.close()
+    conn = db.connetti(percorso)
+    assert "domande" in {r["name"] for r in conn.execute("PRAGMA table_info(sessioni)")}

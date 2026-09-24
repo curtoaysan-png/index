@@ -3,6 +3,7 @@ from datetime import datetime
 
 import streamlit as st
 
+import assistente
 import db
 from logica import num
 
@@ -15,6 +16,14 @@ if richiesta and not db.sessione_in_corso(conn):
 
 sessione = db.sessione_in_corso(conn)
 st.title("Sessione")
+
+
+def mostra_domande_precedenti(fronte_id):
+    domande = db.ultime_domande(conn, fronte_id)
+    if domande:
+        st.markdown("**Domande rimaste dalla sessione precedente**")
+        st.markdown("\n".join(f"- {d}" for d in domande))
+
 
 if sessione is None:
     fronti = db.fronti(conn)
@@ -38,6 +47,7 @@ if sessione is None:
     if rip:
         st.markdown("**Da dove riparti**")
         st.info(rip)
+    mostra_domande_precedenti(fronte_id)
     if st.button("Avvia", type="primary"):
         db.avvia_sessione(conn, fronte_id, durata)
         st.session_state.pop("durata_scelta", None)
@@ -50,6 +60,7 @@ rip = db.ultima_ripartenza(conn, sessione["fronte_id"])
 if rip:
     st.markdown("**Da dove riparti**")
     st.info(rip)
+mostra_domande_precedenti(sessione["fronte_id"])
 
 inizio = datetime.fromisoformat(sessione["inizio"])
 durata_s = sessione["durata_prevista_min"] * 60
@@ -80,6 +91,22 @@ spiegazione = st.text_area(
     help=f"Almeno {db.MIN_SPIEGAZIONE} caratteri.",
 )
 st.caption(f"{len(spiegazione.strip())} / {db.MIN_SPIEGAZIONE} caratteri")
+
+# Domande in stile Feynman sulla spiegazione (facoltative): solo domande, nessuna risposta.
+chiave_domande = f"domande_{sessione['id']}"
+if st.button("Fammi domande su questa spiegazione",
+             disabled=len(spiegazione.strip()) < db.MIN_SPIEGAZIONE,
+             help="L'assistente fa 3 domande sul tuo testo. Non scrive risposte né corregge."):
+    try:
+        with st.spinner("Preparo le domande…"):
+            st.session_state[chiave_domande] = assistente.chiedi_domande(sessione["fronte"], spiegazione)
+    except assistente.ErroreAssistente as e:
+        st.error(str(e))
+domande = st.session_state.get(chiave_domande, [])
+if domande:
+    with st.container(border=True):
+        st.markdown("\n".join(f"{i}. {d}" for i, d in enumerate(domande, 1)))
+        st.caption("Le domande vengono salvate con la sessione e riproposte all'avvio della prossima.")
 ripartenza = st.text_input("Ripartenza: la frase da cui ricominciare la prossima volta")
 
 col1, col2 = st.columns([1, 1])
@@ -95,7 +122,8 @@ if col1.button("Salva e chiudi", type="primary"):
         for e in errori:
             st.error(e)
     else:
-        db.chiudi_sessione(conn, sessione["id"], output, spiegazione, ripartenza)
+        db.chiudi_sessione(conn, sessione["id"], output, spiegazione, ripartenza, domande=domande)
+        st.session_state.pop(chiave_domande, None)
         st.session_state["msg_home"] = f"Sessione salvata: {num(output)} {sessione['unita']}."
         st.switch_page("pages/home.py")
 

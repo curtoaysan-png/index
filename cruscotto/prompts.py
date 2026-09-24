@@ -38,3 +38,26 @@ RIPROVA = (
     "La risposta precedente non era JSON valido secondo lo schema. "
     "Rispondi di nuovo, solo con l'oggetto JSON."
 )
+
+
+# ---------------------------------------------------------------- domande Feynman (v2)
+
+FEYNMAN = """Ricevi la spiegazione che una studentessa ha scritto con parole sue alla fine di una
+sessione di lavoro: tre frasi su cosa ha prodotto.
+
+Il tuo compito è fare esattamente 3 domande brevi in stile Feynman, che verifichino se la
+spiegazione regge: per esempio chiedere di definire un termine usato senza spiegarlo, di dare un
+esempio concreto, di spiegare un passaggio a chi non conosce l'argomento, di dire perché un punto
+conta o cosa cambierebbe se fosse falso.
+
+Regole:
+- Solo domande. Non dare risposte, non suggerire formulazioni, non riscrivere né correggere il testo.
+- Ogni domanda si riferisce a qualcosa che c'è davvero nella spiegazione.
+- Tono neutro e fattuale: niente incoraggiamenti, complimenti o giudizi.
+- Scrivi in italiano.
+
+Rispondi SOLO con un oggetto JSON, senza testo prima o dopo:
+{"domande": ["...", "...", "..."]}
+"""
+
+RICHIESTA_FEYNMAN = "Fronte: {fronte}\n\nSpiegazione:\n{spiegazione}"

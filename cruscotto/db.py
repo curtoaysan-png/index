@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS sessioni (
     durata_prevista_min INTEGER NOT NULL,
     output INTEGER,
     spiegazione TEXT,
-    ripartenza TEXT
+    ripartenza TEXT,
+    domande TEXT                    -- JSON: domande Feynman sulla spiegazione (v2)
 );
 CREATE TABLE IF NOT EXISTS rinvii (
     id INTEGER PRIMARY KEY,
@@ -106,6 +107,10 @@ def connetti(percorso=None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    # Migrazione per database creati prima della v2.
+    colonne = {r["name"] for r in conn.execute("PRAGMA table_info(sessioni)")}
+    if "domande" not in colonne:
+        conn.execute("ALTER TABLE sessioni ADD COLUMN domande TEXT")
     conn.execute(
         "INSERT OR IGNORE INTO preferenze (id, testo_regole) VALUES (1, ?)", (REGOLE_DEFAULT,)
     )
@@ -213,8 +218,11 @@ def annulla_sessione(conn, sessione_id):
     conn.commit()
 
 
-def chiudi_sessione(conn, sessione_id, output, spiegazione, ripartenza, fine=None):
-    """Chiude la sessione. Output, spiegazione e ripartenza sono obbligatori."""
+def chiudi_sessione(conn, sessione_id, output, spiegazione, ripartenza, fine=None, domande=None):
+    """Chiude la sessione. Output, spiegazione e ripartenza sono obbligatori.
+
+    `domande` (facoltative) sono le domande Feynman generate sulla spiegazione.
+    """
     if output is None or int(output) < 0:
         raise ValueError("L'output è obbligatorio (anche 0).")
     if not spiegazione or len(spiegazione.strip()) < MIN_SPIEGAZIONE:
@@ -227,8 +235,10 @@ def chiudi_sessione(conn, sessione_id, output, spiegazione, ripartenza, fine=Non
     if s is None:
         raise ValueError("Sessione non trovata o già chiusa.")
     conn.execute(
-        "UPDATE sessioni SET fine = ?, output = ?, spiegazione = ?, ripartenza = ? WHERE id = ?",
-        (fine or _ora(), int(output), spiegazione.strip(), ripartenza.strip(), sessione_id),
+        "UPDATE sessioni SET fine = ?, output = ?, spiegazione = ?, ripartenza = ?, domande = ? "
+        "WHERE id = ?",
+        (fine or _ora(), int(output), spiegazione.strip(), ripartenza.strip(),
+         json.dumps(domande, ensure_ascii=False) if domande else None, sessione_id),
     )
     conn.execute(
         "UPDATE fronti SET attuale = attuale + ? WHERE id = ?", (int(output), s["fronte_id"])
@@ -251,10 +261,20 @@ def sessioni_chiuse(conn, dal=None) -> list[dict]:
 def ultima_ripartenza(conn, fronte_id) -> str | None:
     r = conn.execute(
         "SELECT ripartenza FROM sessioni WHERE fronte_id = ? AND fine IS NOT NULL "
-        "ORDER BY fine DESC LIMIT 1",
+        "ORDER BY fine DESC, id DESC LIMIT 1",
         (fronte_id,),
     ).fetchone()
     return r["ripartenza"] if r else None
+
+
+def ultime_domande(conn, fronte_id) -> list[str]:
+    """Domande Feynman dell'ultima sessione chiusa sul fronte (lista vuota se assenti)."""
+    r = conn.execute(
+        "SELECT domande FROM sessioni WHERE fronte_id = ? AND fine IS NOT NULL "
+        "ORDER BY fine DESC, id DESC LIMIT 1",
+        (fronte_id,),
+    ).fetchone()
+    return json.loads(r["domande"]) if r and r["domande"] else []
 
 
 # ---------------------------------------------------------------- impegni

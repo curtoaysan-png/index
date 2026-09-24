@@ -55,6 +55,15 @@ Senza chiave l'app funziona in tutto il resto e i pulsanti dell'assistente spieg
 Nessun blocco proposto finisce in calendario senza accettazione esplicita, e i blocchi che si
 sovrappongono a un impegno vengono scartati da `logica.py` prima dell'anteprima.
 
+### Domande in stile Feynman
+
+Nella chiusura della sessione, dopo aver scritto la spiegazione, il pulsante **Fammi domande su
+questa spiegazione** chiede all'assistente 3 domande sul tuo testo (definire un termine, fare un
+esempio, spiegare un passaggio più semplicemente). L'assistente fa solo domande: non dà risposte e
+non riscrive né corregge il testo. Le domande vengono salvate con la sessione e riproposte all'avvio
+della sessione successiva sullo stesso fronte, accanto a "Da dove riparti". Il prompt è in
+`prompts.py` (`FEYNMAN`).
+
 ## Calendario e iCal
 
 - Turni e lezioni si inseriscono una volta con "Ogni settimana" (e una data di fine facoltativa).
