@@ -1,7 +1,15 @@
-"""Accesso al database SQLite. Le regole obbligatorie sono verificate qui."""
+"""Accesso al database. Le regole obbligatorie sono verificate qui.
+
+Sul PC il database è un file SQLite. Nel cloud (variabile DATABASE_URL impostata) è Postgres:
+le query sono le stesse, `ConnessionePg` traduce i segnaposto e restituisce gli id inseriti.
+"""
 import json
+import os
+import re
 import shutil
 import sqlite3
+import tempfile
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -112,8 +120,26 @@ def sposta_vecchio_db(nuovo: Path, vecchio: Path) -> bool:
     return True
 
 
-def connetti(percorso=None) -> sqlite3.Connection:
-    """Apre il database (creandolo se serve) e restituisce la connessione."""
+TABELLE = ["preferenze", "fronti", "sessioni", "rinvii", "acquisti", "impegni", "piani", "fonti"]
+
+
+def url_database() -> str | None:
+    """Indirizzo del database Postgres (cloud), oppure None per usare SQLite sul PC."""
+    return os.environ.get("DATABASE_URL", "").strip() or None
+
+
+def in_cloud() -> bool:
+    return url_database() is not None
+
+
+def connetti(percorso=None):
+    """Apre il database (creandolo se serve) e restituisce la connessione.
+
+    Con `percorso` si apre sempre quel file SQLite (test, backup); altrimenti Postgres se
+    DATABASE_URL è impostata, se no il file SQLite in config.DB_PATH.
+    """
+    if percorso is None and in_cloud():
+        return _connessione_pg(url_database())
     if percorso is None:
         sposta_vecchio_db(Path(config.DB_PATH), Path(config.VECCHIO_DB_PATH))
     percorso = Path(percorso or config.DB_PATH)
@@ -127,11 +153,104 @@ def connetti(percorso=None) -> sqlite3.Connection:
     colonne = {r["name"] for r in conn.execute("PRAGMA table_info(sessioni)")}
     if "domande" not in colonne:
         conn.execute("ALTER TABLE sessioni ADD COLUMN domande TEXT")
+    _preferenze_iniziali(conn)
+    return conn
+
+
+def _preferenze_iniziali(conn):
     conn.execute(
-        "INSERT OR IGNORE INTO preferenze (id, testo_regole) VALUES (1, ?)", (REGOLE_DEFAULT,)
+        "INSERT INTO preferenze (id, testo_regole) VALUES (1, ?) ON CONFLICT DO NOTHING",
+        (REGOLE_DEFAULT,),
     )
     conn.commit()
-    return conn
+
+
+# ---------------------------------------------------------------- Postgres (cloud)
+
+class _Risultato:
+    """Risultato di una query Postgres con la stessa interfaccia usata per SQLite."""
+
+    def __init__(self, righe, lastrowid=None):
+        self._righe = righe
+        self.lastrowid = lastrowid
+
+    def fetchone(self):
+        return self._righe[0] if self._righe else None
+
+    def fetchall(self):
+        return self._righe
+
+    def __iter__(self):
+        return iter(self._righe)
+
+
+class ConnessionePg:
+    """Connessione Postgres che accetta le query scritte per SQLite (segnaposto `?`)."""
+
+    def __init__(self, url):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        self._conn = psycopg.connect(url, row_factory=dict_row)
+        self._lock = threading.RLock()
+
+    def execute(self, sql, parametri=()):
+        sql = sql.replace("?", "%s")
+        inserimento = sql.lstrip().upper().startswith("INSERT") and "RETURNING" not in sql.upper()
+        if inserimento and "ON CONFLICT" not in sql.upper():
+            sql += " RETURNING id"
+        else:
+            inserimento = False
+        with self._lock:
+            try:
+                cur = self._conn.execute(sql, parametri)
+                righe = cur.fetchall() if cur.description else []
+            except Exception:
+                self._conn.rollback()  # altrimenti la transazione resta bloccata
+                raise
+        if inserimento:
+            return _Risultato([], righe[0]["id"])
+        return _Risultato(righe)
+
+    def commit(self):
+        with self._lock:
+            self._conn.commit()
+
+    def rollback(self):
+        with self._lock:
+            self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    @property
+    def chiusa(self) -> bool:
+        return self._conn.closed
+
+
+_pg = {}
+_pg_lock = threading.Lock()
+
+
+def _connessione_pg(url) -> ConnessionePg:
+    """Una sola connessione per processo, riaperta se il server l'ha chiusa (inattività)."""
+    with _pg_lock:
+        conn = _pg.get(url)
+        if conn is not None and not conn.chiusa:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except Exception:
+                conn.close()
+        conn = ConnessionePg(url)
+        schema = re.sub(r"id INTEGER PRIMARY KEY,", "id SERIAL PRIMARY KEY,", SCHEMA)
+        for istruzione in schema.split(";"):
+            if istruzione.strip():
+                conn.execute(istruzione)
+        conn.execute("ALTER TABLE sessioni ADD COLUMN IF NOT EXISTS domande TEXT")
+        _preferenze_iniziali(conn)
+        _pg[url] = conn
+        return conn
 
 
 def _righe(cur) -> list[dict]:
@@ -500,16 +619,77 @@ def elimina_fonte(conn, fonte_id):
     conn.commit()
 
 
-# ---------------------------------------------------------------- backup
+# ---------------------------------------------------------------- backup e ripristino
+
+def _copia_tabelle(sorgente, destinazione):
+    """Sostituisce tutti i dati di `destinazione` con quelli di `sorgente` (stessi id)."""
+    for tabella in reversed(TABELLE):  # prima le tabelle che dipendono dalle altre
+        destinazione.execute(f"DELETE FROM {tabella}")
+    for tabella in TABELLE:
+        righe = [dict(r) for r in sorgente.execute(f"SELECT * FROM {tabella}").fetchall()]
+        colonne_dest = set(_colonne(destinazione, tabella))
+        for r in righe:
+            r = {k: v for k, v in r.items() if k in colonne_dest}
+            nomi = ", ".join(r)
+            segnaposto = ", ".join("?" for _ in r)
+            destinazione.execute(
+                f"INSERT INTO {tabella} ({nomi}) VALUES ({segnaposto}) ON CONFLICT DO NOTHING",
+                tuple(r.values()),
+            )
+    if isinstance(destinazione, ConnessionePg):
+        for tabella in TABELLE:
+            if tabella != "preferenze":
+                destinazione.execute(
+                    f"SELECT setval(pg_get_serial_sequence('{tabella}', 'id'), "
+                    f"COALESCE((SELECT MAX(id) FROM {tabella}), 0) + 1, false)"
+                )
+    destinazione.commit()
+
+
+def _colonne(conn, tabella) -> list[str]:
+    if isinstance(conn, ConnessionePg):
+        righe = conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ?", (tabella,)
+        )
+        return [r["column_name"] for r in righe]
+    return [r["name"] for r in conn.execute(f"PRAGMA table_info({tabella})")]
+
+
+def nome_backup() -> str:
+    return f"cruscotto_{datetime.now():%Y-%m-%d_%H%M}.db"
+
+
+def backup_in_byte(conn) -> bytes:
+    """Copia completa dei dati in un file SQLite, restituita come byte (da scaricare)."""
+    with tempfile.TemporaryDirectory() as cartella:
+        percorso = Path(cartella) / "backup.db"
+        copia = connetti(percorso)
+        _copia_tabelle(conn, copia)
+        copia.close()
+        return percorso.read_bytes()
+
 
 def esporta_backup(conn, cartella) -> Path:
-    """Salva una copia coerente del database con la data nel nome."""
+    """Salva una copia del database con la data nel nome."""
     cartella = Path(cartella).expanduser()
     cartella.mkdir(parents=True, exist_ok=True)
-    dest = cartella / f"cruscotto_{datetime.now():%Y-%m-%d_%H%M}.db"
-    copia = sqlite3.connect(str(dest))
-    with copia:
-        conn.backup(copia)
-    copia.close()
+    dest = cartella / nome_backup()
+    dest.write_bytes(backup_in_byte(conn))
     return dest
 
+
+def ripristina_backup(conn, contenuto: bytes):
+    """Sostituisce TUTTI i dati attuali con quelli di un file di backup."""
+    if not contenuto.startswith(b"SQLite format 3"):
+        raise ValueError("Il file non è un backup del Cruscotto.")
+    with tempfile.TemporaryDirectory() as cartella:
+        percorso = Path(cartella) / "ripristino.db"
+        percorso.write_bytes(contenuto)
+        try:
+            sorgente = connetti(percorso)
+        except sqlite3.DatabaseError as e:
+            raise ValueError("Il file non è un backup del Cruscotto.") from e
+        try:
+            _copia_tabelle(sorgente, conn)
+        finally:
+            sorgente.close()

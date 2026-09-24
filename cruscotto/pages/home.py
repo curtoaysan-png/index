@@ -47,8 +47,16 @@ if vicino:
         avvia(vicino["id"], 90)
     if c2.button("Avvia 10 minuti", disabled=bool(in_corso)):
         avvia(vicino["id"], 10)
+elif not db.fronti(conn, solo_attivi=False):
+    st.info("Nessun fronte ancora. Puoi creare i quattro fronti iniziali (paper, esame Lavenia, "
+            "candidatura CEU, tesi), crearne di nuovi nella pagina Fronti o ripristinare un backup "
+            "in Preferenze e backup.")
+    if st.button("Crea i fronti iniziali"):
+        import seed
+        seed.crea_fronti_iniziali(conn)
+        st.rerun()
 else:
-    st.info("Nessun fronte attivo. Esegui `python seed.py` o crea un fronte nella pagina Fronti.")
+    st.info("Nessun fronte attivo: riattivane uno o creane uno nuovo nella pagina Fronti.")
 
 # ---------------------------------------------------------------- agenda di oggi
 st.divider()

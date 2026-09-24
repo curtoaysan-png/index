@@ -45,14 +45,21 @@ if proposta and proposta["lunedi"] == lunedi:
     proposti = [b for i, b in enumerate(proposta["validi"]) if st.session_state.get(f"tieni_{proposta['piano_id']}_{i}", True)]
 
 # ---------------------------------------------------------------- calendario
+# "Lista" è la vista comoda sul telefono; la scelta resta per tutta la sessione.
+VISTE = {"Settimana": "timeGridWeek", "Giorno": "timeGridDay", "Lista": "listWeek"}
+vista = st.segmented_control("Vista", list(VISTE), default="Settimana", key="vista_calendario",
+                             label_visibility="collapsed") or "Settimana"
+giorno_iniziale = oggi if lunedi <= oggi <= domenica else lunedi
 opzioni = {
-    "initialView": "timeGridWeek",
-    "initialDate": str(lunedi),
+    "initialView": VISTE[vista],
+    "initialDate": str(giorno_iniziale if vista == "Giorno" else lunedi),
     "firstDay": 1,
     # Oggetto locale passato direttamente: il componente non include i file di lingua.
     "locale": {"code": "it", "week": {"dow": 1, "doy": 4}},
-    "headerToolbar": {"left": "", "center": "", "right": "timeGridWeek,timeGridDay"},
-    "buttonText": {"week": "Settimana", "day": "Giorno"},
+    "headerToolbar": {"left": "", "center": "", "right": "prev,next" if vista == "Giorno" else ""},
+    "listDayFormat": {"weekday": "long", "day": "numeric", "month": "long"},
+    "listDaySideFormat": False,
+    "noEventsContent": "Nessun impegno in questa settimana.",
     "dayHeaderFormat": {"weekday": "short", "day": "numeric", "month": "numeric"},
     "slotMinTime": "07:00:00",
     "slotMaxTime": "23:30:00",
@@ -66,7 +73,7 @@ opzioni = {
 eventi = eventi_calendario(occ, proposti)
 stato = calendar(
     events=eventi, options=opzioni, custom_css=CSS_CALENDARIO, callbacks=["eventClick"],
-    key=f"cal_{lunedi}_{st.session_state['cal_ver']}_{hash(str(eventi))}",
+    key=f"cal_{lunedi}_{vista}_{st.session_state['cal_ver']}_{hash(str(eventi))}",
 )
 legenda = " &nbsp; ".join(f'<span style="color:{c}">■</span> {t}' for t, c in COLORI.items())
 st.markdown(legenda + " &nbsp; <span style='color:#3f7d4f'>⬚</span> proposta", unsafe_allow_html=True)

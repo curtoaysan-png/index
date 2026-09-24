@@ -11,6 +11,12 @@ FRONTI = [
 ]
 
 
+def crea_fronti_iniziali(conn) -> int:
+    for nome, scadenza, unita, obiettivo, attuale in FRONTI:
+        db.crea_fronte(conn, nome, scadenza, unita, obiettivo, attuale)
+    return len(FRONTI)
+
+
 def main():
     conn = db.connetti()
     if db.fronti(conn, solo_attivi=False):
@@ -19,9 +25,7 @@ def main():
             return
         print("Il database contiene già dei fronti: seed non eseguito.")
         sys.exit(1)
-    for nome, scadenza, unita, obiettivo, attuale in FRONTI:
-        db.crea_fronte(conn, nome, scadenza, unita, obiettivo, attuale)
-    print(f"Creati {len(FRONTI)} fronti.")
+    print(f"Creati {crea_fronti_iniziali(conn)} fronti.")
 
 
 if __name__ == "__main__":
