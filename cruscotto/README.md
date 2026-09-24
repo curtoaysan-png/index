@@ -4,7 +4,17 @@ App personale e locale per tenere traccia delle decisioni già prese: progresso 
 paper, esami, candidature), avvio rapido delle sessioni di lavoro, scadenze e rinvii, calendario
 degli impegni con un assistente che organizza la settimana, lista d'attesa per gli acquisti e fonti.
 
-## Installazione
+## Avvio rapido su Windows
+
+1. Installa Python da python.org (nella prima schermata spunta **"Add Python to PATH"**).
+2. Scarica il progetto da GitHub (**Code → Download ZIP**) ed estrailo in una cartella locale,
+   non su OneDrive.
+3. Apri la cartella `cruscotto` e fai doppio clic su **`avvia.bat`**.
+
+La prima volta installa le librerie (qualche minuto) e crea i fronti iniziali; le volte successive
+apre subito il Cruscotto nel browser. Per chiuderlo basta chiudere la finestra nera.
+
+## Installazione manuale
 
 Serve Python 3.11 o successivo.
 
