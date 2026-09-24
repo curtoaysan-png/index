@@ -263,7 +263,9 @@
     .week { --lvl: var(--save); border-radius: 14px; padding: 16px; margin-top: 18px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow); }
     .week.mid { --lvl: var(--wants); }
     .week.bad { --lvl: var(--warn); }
+    .week .w-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
     .week .w-label { font-size: 14px; color: var(--ink-dim); }
+    .week #w-edit { padding: 6px 10px; font-size: 13px; white-space: nowrap; }
     .week .w-amount { font-size: 34px; font-weight: 800; color: var(--lvl); font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -0.02em; }
     .week .w-sub { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--ink-dim); margin-top: 8px; }
     .week .w-sub span:last-child { text-align: right; }
@@ -290,7 +292,10 @@
     </header>
 
     <section class="week" id="week-card" aria-live="polite">
-      <div class="w-label" id="w-label">Ti restano questa settimana</div>
+      <div class="w-top">
+        <div class="w-label" id="w-label">Ti restano questa settimana</div>
+        <button type="button" class="small" id="w-edit">✎ Modifica tetto</button>
+      </div>
       <div class="w-amount" id="w-amount"></div>
       <div class="meter"><i id="w-meter"></i></div>
       <div class="w-sub"><span id="w-spent"></span><span id="w-days"></span></div>
@@ -1485,6 +1490,13 @@
         renderLog();
       });
       $("cat-new").addEventListener("keydown", e => { if (e.key === "Enter") $("cat-add").click(); });
+
+      // Apre le impostazioni dei tetti e porta al campo del tetto settimanale
+      $("w-edit").addEventListener("click", () => {
+        $("cat-editor").open = true;
+        $("weekly-cap").scrollIntoView({ behavior: "smooth", block: "center" });
+        $("weekly-cap").focus();
+      });
 
       $("weekly-cap").addEventListener("change", () => {
         const cap = parseAmount($("weekly-cap").value);
