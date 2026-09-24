@@ -271,6 +271,25 @@
     .extra-form button { flex: 0 0 auto; }
     #extra-list .exp { background: var(--surface); }
 
+    /* ---- Riepilogo mese ---- */
+    #sum-month { text-transform: capitalize; }
+    .sum-rows { font-variant-numeric: tabular-nums; }
+    .sum-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 6px 0; font-size: 15px; }
+    .sum-row .s-sub { display: block; font-size: 12px; color: var(--ink-dim); }
+    .sum-row .s-val { font-weight: 600; white-space: nowrap; text-align: right; }
+    .sum-row.total { border-top: 2px solid var(--rule); margin-top: 4px; padding-top: 10px; font-size: 17px; }
+    .sum-row.total .s-val { font-size: 22px; font-weight: 800; color: var(--save); }
+    .sum-row.total.neg .s-val { color: var(--warn); }
+    .delta { font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .delta.up { color: var(--warn); }
+    .delta.down { color: var(--save); }
+    .delta.flat { color: var(--ink-dim); }
+    .sum-title { font-size: 13px; font-weight: 600; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-dim); }
+    .bycat { margin-top: 8px; }
+    .bycat .b-head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+    .bycat .b-head b { font-variant-numeric: tabular-nums; }
+    .bycat .meter { height: 6px; margin-top: 4px; --lvl: var(--needs); }
+
     /* ---- Costi fissi ---- */
     #fx-month { text-transform: capitalize; }
     .fx-summary { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; color: var(--ink-dim); margin-bottom: 8px; }
@@ -364,6 +383,11 @@
       </div>
       <div class="log-total" id="log-total"></div>
       <div id="log-list"></div>
+    </section>
+
+    <section class="card" id="summary-card">
+      <h2>Riepilogo · <span id="sum-month"></span></h2>
+      <div id="sum-body"></div>
     </section>
 
     <section class="card" id="fixed-card">
@@ -1420,6 +1444,7 @@
         renderWeek();
         renderIncome();
         renderFixed();
+        renderSummary();
         $("log-month").textContent = monthLabelLong(logMonth);
         $("log-next").disabled = logMonth >= todayISO().slice(0, 7);
 
@@ -1772,6 +1797,76 @@
         if (e.key === "Enter") $("fx-add").click();
       }));
       $("fx-cancel").addEventListener("click", () => { resetFixedForm(); renderLog(); });
+
+
+      // ---- Riepilogo del mese ----
+      function monthStats(m) {
+        const expenses = log.expenses.filter(e => e.date.slice(0, 7) === m);
+        const extra = log.incomes.filter(e => e.date.slice(0, 7) === m).reduce((a, e) => a + e.amount, 0);
+        const fixed = log.fixedCosts.reduce((a, f) => a + f.amount, 0);
+        const paid = paidSet(m);
+        const fixedPaid = log.fixedCosts.filter(f => paid.has(f.id)).reduce((a, f) => a + f.amount, 0);
+        const variable = expenses.reduce((a, e) => a + e.amount, 0);
+        const byCat = new Map();
+        expenses.forEach(e => byCat.set(e.catId, (byCat.get(e.catId) || 0) + e.amount));
+        const income = log.salary + extra;
+        return { salary: log.salary, extra, income, fixed, fixedPaid, variable, rest: income - fixed - variable, byCat, count: expenses.length };
+      }
+
+      // Differenza rispetto al mese precedente; per le spese "su" è negativo (rosso)
+      function deltaHtml(cur, prev, higherIsBad = true) {
+        if (prev === null) return "";
+        const d = Math.round((cur - prev) * 100) / 100;
+        if (Math.abs(d) < 0.005) return `<span class="delta flat">= mese scorso</span>`;
+        const bad = higherIsBad ? d > 0 : d < 0;
+        return `<span class="delta ${bad ? "up" : "down"}">${d > 0 ? "▲ +" : "▼ −"}${eur2.format(Math.abs(d))}</span>`;
+      }
+
+      function renderSummary() {
+        $("sum-month").textContent = monthLabelLong(logMonth);
+        const cur = monthStats(logMonth);
+        const prevMonth = shiftMonth(logMonth, -1);
+        const prevHasData = log.expenses.some(e => e.date.slice(0, 7) === prevMonth) ||
+          log.incomes.some(e => e.date.slice(0, 7) === prevMonth);
+        const prev = prevHasData ? monthStats(prevMonth) : null;
+
+        const row = (label, sub, val, delta = "") => `<div class="sum-row">
+          <span>${label}${sub ? `<span class="s-sub">${sub}</span>` : ""}</span>
+          <span class="s-val">${val}${delta ? `<br>${delta}` : ""}</span></div>`;
+
+        let html = `<div class="sum-rows">`;
+        html += row("Entrate totali",
+          `stipendio ${eur2.format(cur.salary)}` + (cur.extra ? ` + extra ${eur2.format(cur.extra)}` : ""),
+          eur2.format(cur.income), deltaHtml(cur.income, prev && prev.income, false));
+        html += row("− Costi fissi",
+          log.fixedCosts.length ? `pagati ${eur2.format(cur.fixedPaid)} su ${eur2.format(cur.fixed)}` : "nessun costo fisso",
+          eur2.format(cur.fixed));
+        html += row("− Variabile speso", `${cur.count} ${cur.count === 1 ? "spesa" : "spese"}`,
+          eur2.format(cur.variable), deltaHtml(cur.variable, prev && prev.variable));
+        html += `<div class="sum-row total ${cur.rest < 0 ? "neg" : ""}">
+          <span>Resta${cur.extra ? `<span class="s-sub">di cui ${eur2.format(Math.min(cur.extra, Math.max(cur.rest, 0)))} di extra da mettere da parte</span>` : ""}</span>
+          <span class="s-val">${eur2.format(cur.rest)}${prev ? `<br>${deltaHtml(cur.rest, prev.rest, false)}` : ""}</span></div>`;
+        html += `</div>`;
+        if (!log.salary) html += `<p class="hint">Imposta lo stipendio nella sezione Entrate per vedere quanto ti resta.</p>`;
+
+        // Totale per categoria, con confronto sul mese precedente
+        const cats = log.categories.map(c => ({ c, v: cur.byCat.get(c.id) || 0, p: prev ? (prev.byCat.get(c.id) || 0) : null }))
+          .filter(x => x.v > 0 || (x.p || 0) > 0)
+          .sort((a, b) => b.v - a.v);
+        const max = Math.max(1, ...cats.map(x => x.v));
+        html += `<div class="sum-title">Per categoria</div>`;
+        html += cats.length === 0 ? `<p class="hint">Nessuna spesa registrata.</p>` : cats.map(x => `
+          <div class="bycat">
+            <div class="b-head"><span>${escapeHtml(x.c.name)}</span>
+              <span><b>${eur2.format(x.v)}</b> ${deltaHtml(x.v, x.p)}</span></div>
+            <div class="meter"><i style="width:${x.v / max * 100}%"></i></div>
+          </div>`).join("");
+
+        html += `<p class="hint" style="margin-top:12px">` + (prev
+          ? `Le frecce confrontano con ${monthLabelLong(prevMonth)}.`
+          : `Nessun dato di ${monthLabelLong(prevMonth)} da confrontare.`) + `</p>`;
+        $("sum-body").innerHTML = html;
+      }
 
       loadLog();
       // Prima volta: importa i costi fissi inseriti nel pianificatore
