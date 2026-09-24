@@ -4,6 +4,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151513" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Budget">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>Budget Smart</title>
   <style>
     :root {
@@ -325,6 +330,28 @@
     .cap-row .meter { height: 6px; margin-top: 4px; }
     .caps-title { font-size: 12px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; }
 
+    /* ---- Pianificatore a scomparsa ---- */
+    details.planner { margin-top: 24px; }
+    details.planner > summary {
+      list-style: none; cursor: pointer; margin: 0;
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 14px;
+      padding: 16px 18px; font-size: 16px; font-weight: 600; color: var(--ink);
+      display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow);
+    }
+    details.planner > summary::-webkit-details-marker { display: none; }
+    details.planner > summary::after { content: "▾"; color: var(--ink-dim); transition: transform 0.2s; }
+    details.planner[open] > summary::after { transform: rotate(180deg); }
+    details.planner > .hint { margin: 8px 4px 0; }
+
+    /* ---- Uso da telefono ---- */
+    .wrap { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+    button, summary, label.checkline { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    /* iOS ingrandisce la pagina se un campo ha il testo sotto i 16px */
+    @supports (-webkit-touch-callout: none) {
+      input:not(.amount-input), select, textarea { font-size: 16px !important; }
+      .income input { font-size: 22px !important; }
+    }
+
     .hidden { display: none; }
   </style>
 </head>
@@ -333,7 +360,7 @@
   <div class="wrap">
     <header>
       <h1>Budget Smart</h1>
-      <p>Inserisci il tuo stipendio: l'assistente AI lo divide in categorie per aiutarti a risparmiare.</p>
+      <p>Registra le spese di ogni giorno e tieni d'occhio il tetto settimanale.</p>
     </header>
 
     <section class="week" id="week-card" aria-live="polite">
@@ -445,6 +472,10 @@
       <div class="status" id="csv-status" role="status"></div>
     </section>
 
+    <details class="planner" id="planner">
+      <summary>Pianificatore del budget con AI</summary>
+      <p class="hint">Suddivide lo stipendio in categorie e analizza le spese dei mesi chiusi.</p>
+
     <section class="card">
       <h2>I tuoi dati</h2>
       <div class="grid">
@@ -453,32 +484,10 @@
           <input id="income" type="number" inputmode="decimal" min="0" step="50" placeholder="es. 1800">
         </div>
         <div class="full">
-          <label class="checkline">
-            <input id="family" type="checkbox">
-            Vivo con la mia famiglia: non pago affitto e bollette
-          </label>
-        </div>
-        <div id="rent-wrap">
-          <label for="rent">Affitto o mutuo (€)</label>
-          <input id="rent" type="number" inputmode="decimal" min="0" placeholder="0">
-        </div>
-        <div id="bills-wrap">
-          <label for="bills">Bollette e utenze (€, se le sai)</label>
-          <input id="bills" type="number" inputmode="decimal" min="0" placeholder="stima automatica">
-        </div>
-        <div>
           <label for="debt">Rate / debiti mensili (€)</label>
           <input id="debt" type="number" inputmode="decimal" min="0" placeholder="0">
         </div>
-        <div>
-          <label for="people">Persone in famiglia</label>
-          <input id="people" type="number" inputmode="numeric" min="1" value="1">
-        </div>
-        <div class="full">
-          <label>Altri costi fissi mensili (assicurazioni, palestra, telefono, asilo…)</label>
-          <div id="fixed-list"></div>
-          <button type="button" id="add-fixed" class="small">+ Aggiungi costo fisso</button>
-        </div>
+        <p class="hint full" style="margin:0">I costi fissi vengono presi dalla sezione "Costi fissi" qui sopra.</p>
         <div class="full">
           <label for="goal">Obiettivo di risparmio o note (facoltativo)</label>
           <textarea id="goal" placeholder="es. voglio mettere da parte 3.000 € per un viaggio entro un anno, ho un'auto, lavoro da casa…"></textarea>
@@ -557,6 +566,7 @@
       <div class="status" id="analyze-status" role="status"></div>
       <div id="analysis"></div>
     </section>
+    </details>
   </div>
 
   <script>
@@ -587,52 +597,23 @@
       }
 
       function readInputs() {
-        const family = $("family").checked;
+        // Affitto, bollette e persone non servono più: si vive con la famiglia
         return {
           income: num("income"),
-          family,
-          rent: family ? 0 : num("rent"),
-          bills: family ? 0 : num("bills"),
+          family: true,
+          rent: 0,
+          bills: 0,
           debt: num("debt"),
-          people: Math.max(1, Math.round(num("people")) || 1),
+          people: 1,
           goal: $("goal").value.trim(),
           fixed: readFixed()
         };
       }
 
-      // ---- Costi fissi personalizzati ----
-      function addFixedRow(name, amount) {
-        const row = document.createElement("div");
-        row.className = "fixed-row";
-        row.innerHTML = `
-          <input class="fx-name" type="text" placeholder="Nome (es. Palestra)" aria-label="Nome costo fisso">
-          <input class="fx-amount" type="number" inputmode="decimal" min="0" placeholder="€" aria-label="Importo costo fisso">
-          <button type="button" class="icon" aria-label="Rimuovi costo fisso">✕</button>`;
-        row.querySelector(".fx-name").value = name || "";
-        row.querySelector(".fx-amount").value = amount || "";
-        row.querySelector("button").addEventListener("click", () => { row.remove(); save(); });
-        $("fixed-list").appendChild(row);
-        return row;
-      }
-
+      // Costi fissi del registro quotidiano (sezione "Costi fissi")
       function readFixed() {
-        return Array.from(document.querySelectorAll("#fixed-list .fixed-row"))
-          .map(r => ({
-            name: r.querySelector(".fx-name").value.trim(),
-            amount: Math.max(0, parseFloat(r.querySelector(".fx-amount").value) || 0)
-          }))
-          .filter(f => f.name && f.amount > 0);
+        return (log.fixedCosts || []).map(f => ({ name: f.name, amount: f.amount }));
       }
-
-      function syncFamily() {
-        const family = $("family").checked;
-        $("rent-wrap").classList.toggle("hidden", family);
-        $("bills-wrap").classList.toggle("hidden", family);
-      }
-      $("family").addEventListener("change", () => { syncFamily(); save(); });
-
-      $("add-fixed").addEventListener("click", () => addFixedRow().querySelector(".fx-name").focus());
-      $("fixed-list").addEventListener("change", save);
 
       function save() {
         try {
@@ -646,11 +627,9 @@
           if (raw) {
             const data = JSON.parse(raw);
             const i = data.inputs || {};
-            ["income", "rent", "bills", "debt", "people", "goal"].forEach(k => {
+            ["income", "debt", "goal"].forEach(k => {
               if (i[k] !== undefined && i[k] !== 0 && i[k] !== "") $(k).value = i[k];
             });
-            (i.fixed || []).forEach(f => addFixedRow(f.name, f.amount));
-            $("family").checked = !!i.family;
             if (data.plan && Array.isArray(data.plan.categories)) plan = data.plan;
             if (Array.isArray(data.history)) history = data.history;
             if (data.analysis && Array.isArray(data.analysis.corrections)) analysis = data.analysis;
@@ -1280,11 +1259,7 @@
 
       $("reset").addEventListener("click", () => {
         if (!confirm("Cancellare dati e piano? Lo storico dei mesi resta salvato.")) return;
-        ["income", "rent", "bills", "debt", "goal"].forEach(k => $(k).value = "");
-        $("people").value = 1;
-        $("family").checked = false;
-        syncFamily();
-        $("fixed-list").innerHTML = "";
+        ["income", "debt", "goal"].forEach(k => $(k).value = "");
         plan = null;
         analysis = null;
         save();
@@ -2053,8 +2028,15 @@
       resetQuickForm();
       renderLog();
 
+      // Ricorda se il pianificatore era aperto
+      try { $("planner").open = localStorage.getItem("budget-smart-planner-open") === "1"; } catch (e) { /* ignora */ }
+      $("planner").addEventListener("toggle", () => {
+        try { localStorage.setItem("budget-smart-planner-open", $("planner").open ? "1" : "0"); } catch (e) { /* ignora */ }
+      });
+      // Lo stipendio del registro precompila quello del pianificatore
+      if (!$("income").value && log.salary) $("income").value = log.salary;
+
       load();
-      syncFamily();
       render();
     })();
   </script>
