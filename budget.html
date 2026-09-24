@@ -259,6 +259,18 @@
     .setting-row label { flex: 1; margin: 0; font-size: 14px; color: var(--ink); }
     .setting-row input { flex: 0 0 110px; text-align: right; }
 
+    /* ---- Entrate ---- */
+    #inc-month { text-transform: capitalize; }
+    .extra-box { margin-top: 16px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--save) 10%, transparent); border: 1px solid color-mix(in srgb, var(--save) 30%, transparent); }
+    .extra-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+    .extra-total { color: var(--save); font-size: 18px; font-variant-numeric: tabular-nums; }
+    .extra-form { display: flex; gap: 8px; margin-top: 8px; }
+    .extra-form input { padding: 9px 10px; min-width: 0; }
+    .extra-form #extra-amount { flex: 0 0 90px; text-align: right; }
+    .extra-form #extra-note, .extra-form #extra-date { flex: 1; }
+    .extra-form button { flex: 0 0 auto; }
+    #extra-list .exp { background: var(--surface); }
+
     /* ---- Tetto settimanale ---- */
     .week { --lvl: var(--save); border-radius: 14px; padding: 16px; margin-top: 18px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow); }
     .week.mid { --lvl: var(--wants); }
@@ -338,6 +350,35 @@
       </div>
       <div class="log-total" id="log-total"></div>
       <div id="log-list"></div>
+    </section>
+
+    <section class="card" id="income-card">
+      <h2>Entrate · <span id="inc-month"></span></h2>
+      <div class="setting-row" style="margin-top:0">
+        <label for="salary">Stipendio netto mensile (fisso)</label>
+        <input id="salary" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00">
+      </div>
+
+      <div class="extra-box">
+        <div class="extra-head">
+          <span>Entrate extra</span>
+          <span class="extra-total" id="extra-total"></span>
+        </div>
+        <p class="hint" style="margin-top:2px">Da mettere da parte: non alzano il tetto settimanale.</p>
+        <div id="extra-list"></div>
+        <div class="extra-form">
+          <input id="extra-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="€" aria-label="Importo entrata extra">
+          <input id="extra-note" type="text" list="extra-sources" placeholder="Da dove? (piscina, welfare…)" aria-label="Descrizione entrata extra">
+          <datalist id="extra-sources">
+            <option value="Piscina"><option value="Welfare"><option value="Bonifico ricevuto"><option value="Regalo"><option value="Rimborso">
+          </datalist>
+        </div>
+        <div class="extra-form">
+          <input id="extra-date" type="date" aria-label="Data entrata extra">
+          <button type="button" id="extra-add">Aggiungi entrata</button>
+          <button type="button" id="extra-cancel" class="hidden">Annulla</button>
+        </div>
+      </div>
     </section>
 
     <section class="card">
@@ -1196,7 +1237,7 @@
       const DEFAULT_CATS = ["Cibo fuori", "Benzina", "Spesa", "Trasporti", "Svago", "Shopping", "Altro"];
       const eur2 = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
 
-      // log = { weeklyCap, categories:[{id, name, cap?}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
+      // log = { weeklyCap, salary, incomes:[{id, date, amount, note, created}], categories:[{id, name, cap?}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
       let log = defaultLog();
       let logMonth = null;   // "YYYY-MM" visualizzato nell'elenco
       let editingId = null;  // id della spesa in modifica
@@ -1206,7 +1247,7 @@
       }
 
       function defaultLog() {
-        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [], weeklyCap: DEFAULT_WEEKLY_CAP };
+        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [], weeklyCap: DEFAULT_WEEKLY_CAP, salary: 0, incomes: [] };
       }
 
       function todayISO() {
@@ -1223,7 +1264,11 @@
             log = {
               categories: data.categories.filter(c => c && c.id && c.name),
               expenses: data.expenses.filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.amount > 0),
-              weeklyCap: data.weeklyCap > 0 ? data.weeklyCap : DEFAULT_WEEKLY_CAP
+              weeklyCap: data.weeklyCap > 0 ? data.weeklyCap : DEFAULT_WEEKLY_CAP,
+              salary: data.salary > 0 ? data.salary : 0,
+              incomes: Array.isArray(data.incomes)
+                ? data.incomes.filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.amount > 0)
+                : []
             };
             if (log.categories.length === 0) log.categories = defaultLog().categories;
           }
@@ -1340,6 +1385,7 @@
       function renderLog() {
         renderCats();
         renderWeek();
+        renderIncome();
         $("log-month").textContent = monthLabelLong(logMonth);
         $("log-next").disabled = logMonth >= todayISO().slice(0, 7);
 
@@ -1509,7 +1555,107 @@
       // Al cambio di giorno/settimana con la pagina aperta, aggiorna il riepilogo
       document.addEventListener("visibilitychange", () => { if (!document.hidden) renderWeek(); });
 
+
+      // ---- Entrate: stipendio fisso ed entrate extra ----
+      let editingIncomeId = null;
+      const fmtInput = v => v ? String(v).replace(".", ",") : "";
+
+      function renderIncome() {
+        $("inc-month").textContent = monthLabelLong(logMonth);
+        if (document.activeElement !== $("salary")) $("salary").value = fmtInput(log.salary);
+
+        const items = log.incomes
+          .filter(e => e.date.slice(0, 7) === logMonth)
+          .sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
+        const total = items.reduce((a, e) => a + e.amount, 0);
+        $("extra-total").textContent = eur2.format(total);
+        $("extra-list").innerHTML = items.length === 0
+          ? `<p class="hint">Nessuna entrata extra in questo mese.</p>`
+          : items.map(e => {
+            const [y, mo, d] = e.date.split("-").map(Number);
+            const day = new Date(y, mo - 1, d).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+            return `<div class="exp ${e.id === editingIncomeId ? "is-editing" : ""}" style="margin-top:8px">
+              <div class="e-main">
+                <div class="e-cat">${escapeHtml(e.note || "Entrata extra")}</div>
+                <div class="e-note">${day}</div>
+              </div>
+              <div class="e-amt" style="color:var(--save)">+${eur2.format(e.amount)}</div>
+              <button type="button" data-inc-edit="${e.id}" aria-label="Modifica entrata">✎</button>
+              <button type="button" data-inc-del="${e.id}" aria-label="Elimina entrata">✕</button>
+            </div>`;
+          }).join("");
+      }
+
+      function resetIncomeForm() {
+        editingIncomeId = null;
+        $("extra-amount").value = "";
+        $("extra-note").value = "";
+        $("extra-date").value = todayISO();
+        $("extra-add").textContent = "Aggiungi entrata";
+        $("extra-cancel").classList.add("hidden");
+      }
+
+      $("salary").addEventListener("change", () => {
+        log.salary = parseAmount($("salary").value);
+        $("salary").value = fmtInput(log.salary);
+        saveLog();
+        renderLog();
+      });
+
+      $("extra-add").addEventListener("click", () => {
+        const amount = parseAmount($("extra-amount").value);
+        if (!amount) { $("extra-amount").focus(); return; }
+        const date = $("extra-date").value || todayISO();
+        const note = $("extra-note").value.trim();
+        if (editingIncomeId) {
+          const inc = log.incomes.find(x => x.id === editingIncomeId);
+          if (inc) Object.assign(inc, { amount, date, note });
+        } else {
+          log.incomes.push({ id: uid(), date, amount, note, created: Date.now() });
+        }
+        logMonth = date.slice(0, 7);
+        resetIncomeForm();
+        saveLog();
+        renderLog();
+      });
+      ["extra-amount", "extra-note"].forEach(id => $(id).addEventListener("keydown", e => {
+        if (e.key === "Enter") $("extra-add").click();
+      }));
+      $("extra-cancel").addEventListener("click", () => { resetIncomeForm(); renderLog(); });
+
+      $("extra-list").addEventListener("click", e => {
+        const del = e.target.closest("[data-inc-del]");
+        const edit = e.target.closest("[data-inc-edit]");
+        if (del) {
+          const inc = log.incomes.find(x => x.id === del.dataset.incDel);
+          if (!inc || !confirm(`Eliminare l'entrata di ${eur2.format(inc.amount)}?`)) return;
+          log.incomes = log.incomes.filter(x => x.id !== inc.id);
+          if (editingIncomeId === inc.id) resetIncomeForm();
+          saveLog();
+          renderLog();
+        } else if (edit) {
+          const inc = log.incomes.find(x => x.id === edit.dataset.incEdit);
+          if (!inc) return;
+          editingIncomeId = inc.id;
+          $("extra-amount").value = fmtInput(inc.amount);
+          $("extra-note").value = inc.note || "";
+          $("extra-date").value = inc.date;
+          $("extra-add").textContent = "Salva modifica";
+          $("extra-cancel").classList.remove("hidden");
+          renderLog();
+          $("extra-amount").focus();
+        }
+      });
+
       loadLog();
+      // Prima volta: usa lo stipendio già inserito nel pianificatore, se c'è
+      if (!log.salary) {
+        try {
+          const old = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+          if (old && old.inputs && old.inputs.income > 0) log.salary = old.inputs.income;
+        } catch (e) { /* nessun dato */ }
+      }
+      resetIncomeForm();
       $("weekly-cap").value = String(log.weeklyCap).replace(".", ",");
       logMonth = todayISO().slice(0, 7);
       resetQuickForm();
