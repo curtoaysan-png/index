@@ -10,5 +10,6 @@ pagine = [
     st.Page("pages/home.py", title="Home", icon="🏠", default=True),
     st.Page("pages/sessione.py", title="Sessione", icon="⏱️"),
     st.Page("pages/calendario.py", title="Calendario", icon="📅"),
+    st.Page("pages/storico_piani.py", title="Storico piani", icon="🗂️"),
 ]
 st.navigation(pagine).run()

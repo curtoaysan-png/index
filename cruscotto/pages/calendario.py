@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta
 import streamlit as st
 from streamlit_calendar import calendar
 
+import assistente
 import config
 import db
 import logica
@@ -20,7 +21,7 @@ domenica = lunedi + timedelta(days=6)
 st.title("Calendario")
 
 # ---------------------------------------------------------------- navigazione settimana
-c1, c2, c3, c4 = st.columns([1, 1, 1, 4])
+c1, c2, c3, c4 = st.columns([1.3, 0.8, 1.3, 3.6])
 if c1.button("◀ Precedente"):
     st.session_state["lunedi"] = lunedi - timedelta(days=7)
     st.rerun()
@@ -87,6 +88,100 @@ m1.metric("Ore impegni fissi", logica.num(round(r["ore_fisse"], 1)))
 m2.metric(f"Ore libere ({config.GIORNO_INIZIO}–{config.GIORNO_FINE})", logica.num(round(r["ore_libere"], 1)))
 m3.metric("Ore blocchi pianificati", logica.num(round(r["ore_blocchi"], 1)))
 m4.metric("Ore sessioni fatte", logica.num(round(r["ore_sessioni"], 1)))
+
+# ---------------------------------------------------------------- assistente
+st.divider()
+st.markdown("#### Assistente")
+settimana_corrente = lunedi == logica.lunedi_di(oggi)
+fine_settimana_dt = datetime.combine(lunedi + timedelta(days=7), time())
+if not assistente.chiave_presente():
+    st.caption("Assistente non configurato: serve la variabile d'ambiente ANTHROPIC_API_KEY (vedi README).")
+
+
+def pianifica(tipo: str):
+    adesso = datetime.now().replace(second=0, microsecond=0)
+    if fine_settimana_dt <= adesso:
+        st.error("Questa settimana è già passata.")
+        return
+    dati = logica.costruisci_input(adesso, lunedi, tipo, fronti, sessioni, impegni,
+                                   db.preferenze(conn)["testo_regole"])
+    try:
+        with st.spinner("L'assistente sta preparando il piano…"):
+            risposta = assistente.chiedi_piano(dati)
+    except assistente.ErroreAssistente as e:
+        st.error(str(e))
+        return
+    # Verifica indipendente dal modello: niente blocchi sopra impegni o fuori periodo.
+    da = max(adesso, datetime.combine(lunedi, time()))
+    validi, scartati = logica.valida_blocchi(
+        risposta["blocchi"], logica.occupati_per_piano(occ, adesso),
+        {f["nome"] for f in fronti}, da, fine_settimana_dt,
+    )
+    proposta = {**risposta, "validi": validi, "scartati": scartati}
+    piano_id = db.crea_piano(conn, lunedi, tipo, dati, proposta, risposta["spiegazione"])
+    st.session_state["proposta"] = {
+        "piano_id": piano_id, "lunedi": lunedi, "tipo": tipo, "da": da,
+        "validi": validi, "scartati": scartati,
+        "spiegazione": risposta["spiegazione"], "avvisi": risposta["avvisi"],
+    }
+    st.rerun()
+
+
+b1, b2, _ = st.columns([1, 1, 2])
+if b1.button("Organizza la settimana"):
+    pianifica("settimana intera")
+if b2.button("Ripianifica da oggi", disabled=not settimana_corrente,
+             help="Disponibile solo per la settimana in corso."):
+    pianifica("ripianifica da oggi")
+
+if proposta and proposta["lunedi"] == lunedi:
+    pid = proposta["piano_id"]
+    with st.container(border=True):
+        st.markdown(f"**Proposta ({proposta['tipo']})** — anteprima tratteggiata nel calendario. "
+                    "Nulla viene aggiunto finché non accetti.")
+        if proposta["spiegazione"]:
+            st.write(proposta["spiegazione"])
+        for avviso in proposta["avvisi"]:
+            st.warning(avviso)
+        if proposta["scartati"]:
+            st.caption("Blocchi scartati dalla verifica automatica:")
+            for s in proposta["scartati"]:
+                st.caption(f"– {s.get('fronte', '?')} {s.get('inizio', '')}–{s.get('fine', '')}: {s['motivo']}")
+        if not proposta["validi"]:
+            st.info("Nessun blocco valido da aggiungere.")
+        for i, b in enumerate(proposta["validi"]):
+            ini, fin = logica.a_dt(b["inizio"]), logica.a_dt(b["fine"])
+            st.checkbox(
+                f"{logica.GIORNI[ini.weekday()]} {ini:%d/%m %H:%M}–{fin:%H:%M} · {b['fronte']}"
+                + (f" · {b['attivita']}" if b["attivita"] else ""),
+                value=True, key=f"tieni_{pid}_{i}",
+            )
+        per_nome = {f["nome"]: f for f in fronti}
+
+        def accetta(blocchi):
+            db.accetta_blocchi(conn, pid, blocchi, per_nome, proposta["da"], fine_settimana_dt)
+            st.session_state.pop("proposta")
+            st.session_state["msg_piano"] = f"Aggiunti {len(blocchi)} blocchi al calendario."
+            st.rerun()
+
+        a1, a2, a3 = st.columns(3)
+        if a1.button("Accetta tutto", type="primary", disabled=not proposta["validi"]):
+            accetta(proposta["validi"])
+        if a2.button("Accetta i selezionati", disabled=not proposta["validi"]):
+            accetta(proposti)
+        if a3.button("Rifiuta"):
+            db.rifiuta_piano(conn, pid)
+            st.session_state.pop("proposta")
+            st.rerun()
+        if proposta["tipo"] == "ripianifica da oggi" or proposta["da"] > datetime.combine(lunedi, time()):
+            st.caption(f"Accettando, i blocchi dell'assistente dopo il {proposta['da']:%d/%m %H:%M} "
+                       "vengono sostituiti; quelli passati restano.")
+        else:
+            st.caption("Accettando, i blocchi dell'assistente di questa settimana vengono sostituiti.")
+
+if msg := st.session_state.pop("msg_piano", None):
+    st.success(msg)
+
 
 # ---------------------------------------------------------------- aggiunta e modifica
 def campi_impegno(pref: str, v: dict | None):
