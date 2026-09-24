@@ -271,6 +271,20 @@
     .extra-form button { flex: 0 0 auto; }
     #extra-list .exp { background: var(--surface); }
 
+    /* ---- Costi fissi ---- */
+    #fx-month { text-transform: capitalize; }
+    .fx-summary { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; color: var(--ink-dim); margin-bottom: 8px; }
+    .fx-summary b { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .fx-item { display: flex; align-items: center; gap: 8px; padding: 6px 4px 6px 10px; border: 1px solid var(--rule); border-radius: 10px; margin-bottom: 6px; }
+    .fx-item.paid { background: color-mix(in srgb, var(--save) 8%, transparent); }
+    .fx-item.paid .e-cat, .fx-item.paid .e-amt { color: var(--ink-dim); text-decoration: line-through; }
+    .fx-item label.checkline { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; min-height: 36px; }
+    .fx-item .e-amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .fx-item button { border: none; background: transparent; color: var(--ink-dim); padding: 8px; font-size: 16px; }
+    .fx-item.is-editing { border-color: var(--accent); }
+    .fx-form #fx-new-name { flex: 1; }
+    .fx-form #fx-new-amount { flex: 0 0 100px; text-align: right; }
+
     /* ---- Tetto settimanale ---- */
     .week { --lvl: var(--save); border-radius: 14px; padding: 16px; margin-top: 18px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow); }
     .week.mid { --lvl: var(--wants); }
@@ -350,6 +364,21 @@
       </div>
       <div class="log-total" id="log-total"></div>
       <div id="log-list"></div>
+    </section>
+
+    <section class="card" id="fixed-card">
+      <h2>Costi fissi · <span id="fx-month"></span></h2>
+      <div class="fx-summary" id="fx-summary"></div>
+      <div id="fx-list"></div>
+      <div class="extra-form fx-form">
+        <input id="fx-new-name" type="text" placeholder="Nome (es. Psicologo)" aria-label="Nome costo fisso">
+        <input id="fx-new-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="€/mese" aria-label="Importo mensile">
+      </div>
+      <div class="extra-form fx-form">
+        <button type="button" id="fx-add" style="flex:1">Aggiungi costo fisso</button>
+        <button type="button" id="fx-cancel" class="hidden">Annulla</button>
+      </div>
+      <p class="hint">Si ripetono ogni mese: spunta quelli già pagati. Non contano nel tetto settimanale.</p>
     </section>
 
     <section class="card" id="income-card">
@@ -1237,7 +1266,7 @@
       const DEFAULT_CATS = ["Cibo fuori", "Benzina", "Spesa", "Trasporti", "Svago", "Shopping", "Altro"];
       const eur2 = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
 
-      // log = { weeklyCap, salary, incomes:[{id, date, amount, note, created}], categories:[{id, name, cap?}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
+      // log = { weeklyCap, salary, fixedCosts:[{id, name, amount}], fixedPaid:{"YYYY-MM":[id]}, incomes:[{id, date, amount, note, created}], categories:[{id, name, cap?}], expenses:[{id, date:"YYYY-MM-DD", amount, catId, note, created}] }
       let log = defaultLog();
       let logMonth = null;   // "YYYY-MM" visualizzato nell'elenco
       let editingId = null;  // id della spesa in modifica
@@ -1247,7 +1276,7 @@
       }
 
       function defaultLog() {
-        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [], weeklyCap: DEFAULT_WEEKLY_CAP, salary: 0, incomes: [] };
+        return { categories: DEFAULT_CATS.map(name => ({ id: uid(), name })), expenses: [], weeklyCap: DEFAULT_WEEKLY_CAP, salary: 0, incomes: [], fixedCosts: null, fixedPaid: {} };
       }
 
       function todayISO() {
@@ -1266,6 +1295,10 @@
               expenses: data.expenses.filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.amount > 0),
               weeklyCap: data.weeklyCap > 0 ? data.weeklyCap : DEFAULT_WEEKLY_CAP,
               salary: data.salary > 0 ? data.salary : 0,
+              fixedCosts: Array.isArray(data.fixedCosts)
+                ? data.fixedCosts.filter(f => f && f.id && f.name && f.amount > 0)
+                : null,
+              fixedPaid: data.fixedPaid && typeof data.fixedPaid === "object" ? data.fixedPaid : {},
               incomes: Array.isArray(data.incomes)
                 ? data.incomes.filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.amount > 0)
                 : []
@@ -1386,6 +1419,7 @@
         renderCats();
         renderWeek();
         renderIncome();
+        renderFixed();
         $("log-month").textContent = monthLabelLong(logMonth);
         $("log-next").disabled = logMonth >= todayISO().slice(0, 7);
 
@@ -1647,7 +1681,109 @@
         }
       });
 
+
+      // ---- Costi fissi ricorrenti ----
+      let editingFixedId = null;
+
+      function paidSet(month) {
+        return new Set(Array.isArray(log.fixedPaid[month]) ? log.fixedPaid[month] : []);
+      }
+
+      function renderFixed() {
+        $("fx-month").textContent = monthLabelLong(logMonth);
+        const paid = paidSet(logMonth);
+        const total = log.fixedCosts.reduce((a, f) => a + f.amount, 0);
+        const paidTotal = log.fixedCosts.filter(f => paid.has(f.id)).reduce((a, f) => a + f.amount, 0);
+        $("fx-summary").innerHTML = log.fixedCosts.length === 0 ? "" :
+          `<span>Totale <b>${eur2.format(total)}</b>/mese</span>
+           <span>Pagati <b>${eur2.format(paidTotal)}</b> · da pagare <b>${eur2.format(total - paidTotal)}</b></span>`;
+        $("fx-list").innerHTML = log.fixedCosts.length === 0
+          ? `<p class="hint">Nessun costo fisso. Aggiungi qui sotto quelli che paghi ogni mese.</p>`
+          : log.fixedCosts.map(f => `
+            <div class="fx-item ${paid.has(f.id) ? "paid" : ""} ${f.id === editingFixedId ? "is-editing" : ""}">
+              <label class="checkline">
+                <input type="checkbox" data-fx-paid="${f.id}" ${paid.has(f.id) ? "checked" : ""}
+                  aria-label="${escapeHtml(f.name)} pagato questo mese">
+                <span class="e-cat">${escapeHtml(f.name)}</span>
+              </label>
+              <span class="e-amt">${eur2.format(f.amount)}</span>
+              <button type="button" data-fx-edit="${f.id}" aria-label="Modifica ${escapeHtml(f.name)}">✎</button>
+              <button type="button" data-fx-del="${f.id}" aria-label="Elimina ${escapeHtml(f.name)}">✕</button>
+            </div>`).join("");
+      }
+
+      function resetFixedForm() {
+        editingFixedId = null;
+        $("fx-new-name").value = "";
+        $("fx-new-amount").value = "";
+        $("fx-add").textContent = "Aggiungi costo fisso";
+        $("fx-cancel").classList.add("hidden");
+      }
+
+      $("fx-list").addEventListener("change", e => {
+        const id = e.target.dataset.fxPaid;
+        if (!id) return;
+        const paid = paidSet(logMonth);
+        if (e.target.checked) paid.add(id); else paid.delete(id);
+        log.fixedPaid[logMonth] = Array.from(paid);
+        saveLog();
+        renderLog();
+      });
+
+      $("fx-list").addEventListener("click", e => {
+        const del = e.target.closest("[data-fx-del]");
+        const edit = e.target.closest("[data-fx-edit]");
+        if (del) {
+          const f = log.fixedCosts.find(x => x.id === del.dataset.fxDel);
+          if (!f || !confirm(`Eliminare "${f.name}" dai costi fissi?`)) return;
+          log.fixedCosts = log.fixedCosts.filter(x => x.id !== f.id);
+          if (editingFixedId === f.id) resetFixedForm();
+          saveLog();
+          renderLog();
+        } else if (edit) {
+          const f = log.fixedCosts.find(x => x.id === edit.dataset.fxEdit);
+          if (!f) return;
+          editingFixedId = f.id;
+          $("fx-new-name").value = f.name;
+          $("fx-new-amount").value = fmtInput(f.amount);
+          $("fx-add").textContent = "Salva modifica";
+          $("fx-cancel").classList.remove("hidden");
+          renderLog();
+          $("fx-new-name").focus();
+        }
+      });
+
+      $("fx-add").addEventListener("click", () => {
+        const name = $("fx-new-name").value.trim();
+        const amount = parseAmount($("fx-new-amount").value);
+        if (!name) { $("fx-new-name").focus(); return; }
+        if (!amount) { $("fx-new-amount").focus(); return; }
+        if (editingFixedId) {
+          const f = log.fixedCosts.find(x => x.id === editingFixedId);
+          if (f) Object.assign(f, { name, amount });
+        } else {
+          log.fixedCosts.push({ id: uid(), name, amount });
+        }
+        resetFixedForm();
+        saveLog();
+        renderLog();
+      });
+      ["fx-new-name", "fx-new-amount"].forEach(id => $(id).addEventListener("keydown", e => {
+        if (e.key === "Enter") $("fx-add").click();
+      }));
+      $("fx-cancel").addEventListener("click", () => { resetFixedForm(); renderLog(); });
+
       loadLog();
+      // Prima volta: importa i costi fissi inseriti nel pianificatore
+      if (!Array.isArray(log.fixedCosts)) {
+        log.fixedCosts = [];
+        try {
+          const old = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+          ((old && old.inputs && old.inputs.fixed) || []).forEach(f => {
+            if (f && f.name && f.amount > 0) log.fixedCosts.push({ id: uid(), name: f.name, amount: f.amount });
+          });
+        } catch (e) { /* nessun dato */ }
+      }
       // Prima volta: usa lo stipendio già inserito nel pianificatore, se c'è
       if (!log.salary) {
         try {
