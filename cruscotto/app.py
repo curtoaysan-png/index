@@ -2,6 +2,7 @@
 import hmac
 import os
 import time
+from pathlib import Path
 
 import streamlit as st
 
@@ -22,6 +23,30 @@ if hasattr(time, "tzset"):  # non esiste su Windows, dove l'ora del PC è già q
 import db  # noqa: E402
 
 st.set_page_config(page_title="Cruscotto", page_icon="🧭", layout="wide")
+
+
+def su_streamlit_cloud() -> bool:
+    # Streamlit Community Cloud esegue le app da /mount/src con l'utente "appuser".
+    return str(Path(__file__).resolve()).startswith("/mount/src") or \
+        os.environ.get("HOME") == "/home/appuser"
+
+
+# Online senza database o senza password l'app NON parte: i dati finirebbero in un file
+# temporaneo cancellato a ogni riavvio, e l'app sarebbe aperta a chiunque.
+if su_streamlit_cloud():
+    mancanti = [k for k in ("DATABASE_URL", "CRUSCOTTO_PASSWORD") if not os.environ.get(k, "").strip()]
+    if mancanti:
+        st.title("Cruscotto")
+        st.error("L'app online non è ancora configurata: mancano " + " e ".join(f"`{k}`" for k in mancanti)
+                 + " nei Secrets. Finché mancano, l'app resta bloccata per non perdere dati.")
+        st.markdown(
+            "Su **share.streamlit.io**, accanto all'app: **⋮ → Settings → Secrets**, poi aggiungi:\n"
+            "```\nDATABASE_URL = \"postgresql://...stringa di Neon...\"\n"
+            "CRUSCOTTO_PASSWORD = \"la tua password\"\n```\n"
+            "Salva e attendi circa un minuto. Guida completa nel README, sezione "
+            "*Usarlo anche dal telefono*."
+        )
+        st.stop()
 
 pagine = [
     st.Page("pages/home.py", title="Home", icon="🏠", default=True),
