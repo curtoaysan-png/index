@@ -1,10 +1,21 @@
 """Configurazione di Armadio."""
+import os
 from pathlib import Path
 
 BASE = Path(__file__).parent
-DATI_DIR = BASE / "data"
-FOTO_DIR = DATI_DIR / "foto"
+
+# I dati stanno fuori dalla cartella dell'app, così si può aggiornare l'app senza perderli.
+# Windows: C:\Users\<nome>\AppData\Local\Armadio (locale, non sincronizzata da OneDrive).
+# Mac/Linux: ~/.armadio
+DATI_DIR = Path(os.environ["LOCALAPPDATA"]) / "Armadio" if os.environ.get("LOCALAPPDATA") \
+    else Path.home() / ".armadio"
 DB_PATH = DATI_DIR / "armadio.db"
+
+# Posizione usata dalla prima versione: al primo avvio database e foto vengono spostati.
+VECCHIO_DATI_DIR = BASE / "data"
+
+# Cartella proposta per il backup (si può cambiare dalla pagina Backup).
+BACKUP_DIR = DATI_DIR / "backup"
 
 # Modello usato per tutte le chiamate. La chiave si legge da ANTHROPIC_API_KEY.
 MODELLO = "claude-sonnet-5"

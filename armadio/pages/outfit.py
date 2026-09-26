@@ -8,7 +8,6 @@ import config
 import db
 import ui
 
-st.set_page_config(page_title="Outfit", page_icon="👗", layout="wide")
 st.title("Cosa mi metto?")
 c = ui.conn()
 stato = st.session_state

@@ -1,6 +1,5 @@
 """Armadio: aggiunta dei capi (foto → scheda → Salva) e griglia con filtri."""
 import hashlib
-import uuid
 
 import streamlit as st
 
@@ -9,7 +8,6 @@ import config
 import db
 import ui
 
-st.set_page_config(page_title="Armadio", page_icon="👗", layout="wide")
 st.title("Il mio armadio")
 c = ui.conn()
 stato = st.session_state
@@ -19,8 +17,8 @@ stato.setdefault("uploader", 0)     # cambiando la chiave si svuota il caricator
 
 # --- aggiunta -----------------------------------------------------------------
 st.subheader("Aggiungi capi")
-if stato.get("messaggio"):
-    st.success(stato.pop("messaggio"))
+if stato.get("msg_armadio"):
+    st.success(stato.pop("msg_armadio"))
 if not ai.chiave_presente():
     st.caption("Senza chiave API i campi vanno compilati a mano.")
 file = st.file_uploader("Foto dei capi", type=["jpg", "jpeg", "png", "webp"],
@@ -73,18 +71,15 @@ def scheda(f) -> bool:
                                   [s for s in v["stagione"] if s in config.STAGIONI])
         note = st.text_input("Note", v["note"])
         if st.form_submit_button("💾 Salva", type="primary"):
-            config.FOTO_DIR.mkdir(parents=True, exist_ok=True)
-            nome = f"{uuid.uuid4().hex}.jpg"
-            (config.FOTO_DIR / nome).write_bytes(jpeg)
             db.aggiungi_capo(c, {
-                "foto_path": str((config.FOTO_DIR / nome).relative_to(config.BASE)),
+                "foto": jpeg,
                 "categoria": categoria,
                 "colori": [x.strip() for x in colori.split(",") if x.strip()],
                 "materiale": materiale.strip(), "formalita": formalita, "stagione": stagione,
                 "stile": stile, "note": note.strip(),
             })
             stato.salvati.add(h)
-            stato.messaggio = f"Capo salvato ({categoria})."
+            stato.msg_armadio = f"Capo salvato ({categoria})."
             return False
     return True
 

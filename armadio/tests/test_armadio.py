@@ -10,12 +10,6 @@ import config
 import db
 
 
-@pytest.fixture
-def conn(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "BASE", tmp_path)
-    return db.connetti(tmp_path / "t.db")
-
-
 def _capo(**kw):
     base = {"categoria": "top", "colori": ["blu"], "materiale": "cotone", "formalita": 2,
             "stagione": ["estate"], "stile": "casual", "note": ""}
@@ -36,15 +30,14 @@ class ClientFinto:
         return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text=testo)])
 
 
-def test_capi_crud(conn, tmp_path):
-    foto = tmp_path / "data" / "foto" / "x.jpg"
-    foto.parent.mkdir(parents=True)
-    foto.write_bytes(b"x")
-    cid = db.aggiungi_capo(conn, _capo(foto_path="data/foto/x.jpg", colori=["blu", "bianco"]))
+def test_capi_crud(conn):
+    cid = db.aggiungi_capo(conn, _capo(foto=b"\xff\xd8jpeg", colori=["blu", "bianco"]))
     assert db.capo(conn, cid)["colori"] == ["blu", "bianco"]
+    assert "foto" not in db.capi(conn)[0]  # l'elenco non carica le foto
+    assert db.foto_capo(conn, cid) == b"\xff\xd8jpeg"
     assert db.ids_capi(conn) == {cid}
     db.elimina_capo(conn, cid)
-    assert db.capi(conn) == [] and not foto.exists()
+    assert db.capi(conn) == [] and db.foto_capo(conn, cid) is None
 
 
 def test_profilo_e_giudizio(conn):
@@ -114,3 +107,58 @@ def test_armocromia_affidabilita_massima_media():
 def test_colori_testo_andata_ritorno():
     colori = [{"nome": "blu navy", "hex": "#1F2A44"}, {"nome": "salvia", "hex": ""}]
     assert db.testo_a_colori(db.colori_a_testo(colori)) == colori
+
+
+def test_backup_e_ripristino(conn, tmp_path):
+    cid = db.aggiungi_capo(conn, _capo(foto=b"FOTO"))
+    db.aggiorna_profilo(conn, preferenze_stile="comoda")
+    oid = db.salva_outfit(conn, "cena", [cid], "ok", "", {"manca": None})
+    copia = db.backup_in_byte(conn)
+    assert copia.startswith(b"SQLite format 3")
+
+    db.elimina_capo(conn, cid)
+    db.aggiorna_profilo(conn, preferenze_stile="")
+    db.ripristina_backup(conn, copia)
+    assert db.foto_capo(conn, cid) == b"FOTO"
+    assert db.profilo(conn)["preferenze_stile"] == "comoda"
+    assert db.outfit(conn, oid)["capi_ids"] == [cid]
+    # Dopo il ripristino i nuovi id non si scontrano con quelli ripristinati.
+    assert db.aggiungi_capo(conn, _capo()) > cid
+
+
+def test_ripristino_rifiuta_file_estranei(conn, tmp_path):
+    with pytest.raises(ValueError):
+        db.ripristina_backup(conn, b"non un database")
+    import sqlite3
+    altro = tmp_path / "altro.db"
+    sqlite3.connect(altro).execute("CREATE TABLE fronti (id INTEGER)").connection.commit()
+    with pytest.raises(ValueError):
+        db.ripristina_backup(conn, altro.read_bytes())
+
+
+def test_sposta_vecchi_dati(tmp_path):
+    """Il database della prima versione (armadio/data, foto come file) viene spostato."""
+    import sqlite3
+    vecchia = tmp_path / "app" / "data"
+    (vecchia / "foto").mkdir(parents=True)
+    (vecchia / "foto" / "a.jpg").write_bytes(b"JPG")
+    v = sqlite3.connect(vecchia / "armadio.db")
+    v.execute("CREATE TABLE capi (id INTEGER PRIMARY KEY AUTOINCREMENT, foto_path TEXT, categoria TEXT NOT NULL,"
+              " colori TEXT NOT NULL DEFAULT '[]', materiale TEXT DEFAULT '', formalita INTEGER DEFAULT 3,"
+              " stagione TEXT NOT NULL DEFAULT '[]', stile TEXT DEFAULT '', note TEXT DEFAULT '',"
+              " aggiunto_il TEXT NOT NULL)")
+    v.execute("INSERT INTO capi (foto_path, categoria, aggiunto_il) VALUES ('data/foto/a.jpg', 'top', 'x')")
+    v.commit()
+    v.close()
+
+    nuovo = tmp_path / "AppData" / "armadio.db"
+    assert db.sposta_vecchi_dati(nuovo, vecchia)
+    c = db.connetti(nuovo)
+    assert db.foto_capo(c, 1) == b"JPG"
+    assert (vecchia / "armadio.db.spostato").exists() and not (vecchia / "armadio.db").exists()
+    assert not db.sposta_vecchi_dati(nuovo, vecchia)  # seconda volta: niente da fare
+
+
+def test_schema_postgres():
+    s = db.schema_pg()
+    assert "SERIAL PRIMARY KEY" in s and "BYTEA" in s and "AUTOINCREMENT" not in s

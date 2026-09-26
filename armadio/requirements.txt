@@ -2,3 +2,5 @@ streamlit>=1.50
 anthropic>=0.40
 Pillow>=10.0
 pytest>=8.0
+# Database online (solo nel cloud, che gira su Linux): sul PC non serve.
+psycopg[binary]>=3.2; sys_platform == "linux"
