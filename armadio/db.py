@@ -157,9 +157,11 @@ class ConnessionePg:
 
         self._conn = psycopg.connect(url, row_factory=dict_row)
         self._lock = threading.RLock()
+        self._scrittura = False  # True tra una modifica e il suo commit
 
     def execute(self, sql, parametri=()):
         sql = sql.replace("?", "%s")
+        lettura = sql.lstrip().upper().startswith("SELECT")
         inserimento = sql.lstrip().upper().startswith("INSERT") and "RETURNING" not in sql.upper()
         if inserimento and "ON CONFLICT" not in sql.upper():
             sql += " RETURNING id"
@@ -171,7 +173,14 @@ class ConnessionePg:
                 righe = cur.fetchall() if cur.description else []
             except Exception:
                 self._conn.rollback()  # altrimenti la transazione resta bloccata
+                self._scrittura = False
                 raise
+            if not lettura:
+                self._scrittura = True
+            elif not self._scrittura:
+                # Una lettura da sola non deve lasciare una transazione aperta: bloccherebbe
+                # altre operazioni sulle tabelle (il database può essere condiviso col Cruscotto).
+                self._conn.commit()
         if inserimento:
             return _Risultato([], righe[0]["id"])
         return _Risultato(righe)
@@ -179,6 +188,12 @@ class ConnessionePg:
     def commit(self):
         with self._lock:
             self._conn.commit()
+            self._scrittura = False
+
+    @property
+    def in_transazione(self) -> bool:
+        from psycopg.pq import TransactionStatus
+        return self._conn.info.transaction_status != TransactionStatus.IDLE
 
     def close(self):
         self._conn.close()

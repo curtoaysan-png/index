@@ -162,3 +162,12 @@ def test_sposta_vecchi_dati(tmp_path):
 def test_schema_postgres():
     s = db.schema_pg()
     assert "SERIAL PRIMARY KEY" in s and "BYTEA" in s and "AUTOINCREMENT" not in s
+
+
+def test_postgres_letture_non_lasciano_transazioni_aperte(conn):
+    if not isinstance(conn, db.ConnessionePg):
+        pytest.skip("solo Postgres")
+    db.aggiungi_capo(conn, _capo())
+    db.capi(conn)
+    db.profilo(conn)
+    assert not conn.in_transazione
