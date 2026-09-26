@@ -1,3 +1,5 @@
 data/
 __pycache__/
 .pytest_cache/
+chiave_api.txt
+chiave_api.txt.txt

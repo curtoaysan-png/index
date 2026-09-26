@@ -8,7 +8,6 @@ import config
 import db
 import ui
 
-st.set_page_config(page_title="Armocromia", page_icon="👗", layout="wide")
 st.title("Armocromia e profilo")
 c = ui.conn()
 stato = st.session_state
@@ -63,8 +62,8 @@ else:
 
 # --- profilo modificabile ---------------------------------------------------------
 st.subheader("Profilo")
-if stato.get("messaggio"):
-    st.success(stato.pop("messaggio"))
+if stato.get("msg_profilo"):
+    st.success(stato.pop("msg_profilo"))
 if base["palette_consigliata"]:
     st.markdown("**Palette consigliata**")
     campioni(base["palette_consigliata"])
@@ -103,5 +102,5 @@ with st.form("profilo"):
             preferenze_stile=preferenze.strip(),
         )
         stato.pop("stima", None)
-        stato.messaggio = "Profilo salvato."
+        stato.msg_profilo = "Profilo salvato."
         st.rerun()
