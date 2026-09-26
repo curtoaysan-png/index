@@ -6,7 +6,15 @@ App personale e locale per decidere cosa indossare:
 2. **Outfit**: scrivi la situazione (es. «cena informale sabato sera, fa freddo») e ricevi un outfit composto solo dai tuoi capi, con la spiegazione e, se utile, uno stile alternativo.
 3. **Armocromia**: stima indicativa di sottotono, stagione e palette a partire da 1-3 selfie, modificabile a mano.
 
-## Installazione
+## Avvio rapido su Windows (senza terminale)
+
+1. Scarica il progetto: su https://github.com/curtoaysan-png/index clicca **Code → Download ZIP**,
+   poi clic destro sul file → **Estrai tutto…**.
+2. Apri la cartella estratta, poi la cartella `armadio`.
+3. (Facoltativo) Crea un file di testo `chiave_api.txt` con dentro solo la chiave API (`sk-ant-...`).
+4. Doppio clic su **`avvia.bat`**: la prima volta installa le librerie, poi apre l'app nel browser.
+
+## Installazione (da terminale)
 
 Serve Python 3.11 o successivo.
 
