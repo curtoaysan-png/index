@@ -4,6 +4,7 @@ from datetime import datetime
 import streamlit as st
 
 import assistente
+import config
 import db
 from logica import num
 
@@ -37,7 +38,7 @@ if sessione is None:
         format_func=lambda i: next(f["nome"] for f in fronti if f["id"] == i),
     )
     # Dal calendario arriva la durata del blocco di lavoro.
-    durate = [90, 10]
+    durate = list(config.DURATE_SESSIONE)
     blocco = st.session_state.get("durata_scelta")
     if blocco and blocco not in durate:
         durate.insert(0, blocco)

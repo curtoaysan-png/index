@@ -17,6 +17,9 @@ VECCHIO_DB_PATH = BASE / "data" / "cruscotto.db"
 # Cartella proposta per il backup (si può cambiare dalla pagina Preferenze).
 BACKUP_DIR = DATI_DIR / "backup"
 
+# Durate proposte per le sessioni, in minuti.
+DURATE_SESSIONE = [90, 45, 30, 10]
+
 # Modello usato dall'assistente. La chiave si legge da ANTHROPIC_API_KEY.
 MODELLO = "claude-sonnet-5"
 

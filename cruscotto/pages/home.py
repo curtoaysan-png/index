@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 import streamlit as st
 
+import config
 import db
 import logica
 from componenti import mostra_agenda_oggi
@@ -27,6 +28,16 @@ def avvia(fronte_id, durata):
     st.switch_page("pages/sessione.py")
 
 
+def scegli_durata(fronte_id, chiave, etichetta="Avvia"):
+    """Barra delle durate: toccandone una la sessione parte subito (un clic)."""
+    durata = st.segmented_control(
+        etichetta, config.DURATE_SESSIONE, format_func=lambda m: f"{m} min",
+        key=chiave, disabled=bool(in_corso),
+    )
+    if durata:
+        avvia(fronte_id, durata)
+
+
 fronti = db.fronti(conn)
 sessioni = db.sessioni_chiuse(conn, dal=oggi - timedelta(days=30))
 in_corso = db.sessione_in_corso(conn)
@@ -42,11 +53,7 @@ if vicino:
     st.caption(f"Da dove riparti — {vicino['nome']}")
     rip = db.ultima_ripartenza(conn, vicino["id"])
     st.markdown(f"## {rip}" if rip else "## Nessuna sessione ancora registrata.")
-    c1, c2, _ = st.columns([1, 1, 4])
-    if c1.button("Avvia 90 minuti", type="primary", disabled=bool(in_corso)):
-        avvia(vicino["id"], 90)
-    if c2.button("Avvia 10 minuti", disabled=bool(in_corso)):
-        avvia(vicino["id"], 10)
+    scegli_durata(vicino["id"], "avvia_vicino", "Avvia una sessione")
 elif not db.fronti(conn, solo_attivi=False):
     st.info("Nessun fronte ancora. Puoi creare i quattro fronti iniziali (paper, esame Lavenia, "
             "candidatura CEU, tesi), crearne di nuovi nella pagina Fronti o ripristinare un backup "
@@ -98,11 +105,7 @@ for i, f in enumerate(fronti):
             )
         rinvii = n_rinvii.get(f["id"], 0)
         st.caption(f"Rinvii registrati: {rinvii}")
-        b1, b2, _ = st.columns([1, 1, 2])
-        if b1.button("90 min", key=f"a90_{f['id']}", disabled=bool(in_corso)):
-            avvia(f["id"], 90)
-        if b2.button("10 min", key=f"a10_{f['id']}", disabled=bool(in_corso)):
-            avvia(f["id"], 10)
+        scegli_durata(f["id"], f"avvia_{f['id']}")
 
 # ---------------------------------------------------------------- catena dei giorni
 st.divider()

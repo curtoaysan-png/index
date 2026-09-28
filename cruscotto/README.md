@@ -33,7 +33,8 @@ streamlit run app.py
 ```
 
 Si apre il browser su `http://localhost:8501`. Dalla home una sessione parte con un clic
-("Avvia 90 minuti" / "Avvia 10 minuti", oppure i pulsanti su ogni fronte).
+(90, 45, 30 o 10 minuti, in alto o su ogni fronte). Le durate si cambiano in `config.py`
+(`DURATE_SESSIONE`).
 
 ## Database e backup
 

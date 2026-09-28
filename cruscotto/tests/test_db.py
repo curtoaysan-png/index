@@ -174,3 +174,15 @@ def test_backup_dal_pc_ripristinato_nel_cloud(conn, tmp_path):
 def test_ripristino_file_non_valido(conn):
     with pytest.raises(ValueError):
         db.ripristina_backup(conn, b"non un database")
+
+
+def test_letture_postgres_non_lasciano_transazioni_aperte(conn):
+    if not isinstance(conn, db.ConnessionePg):
+        pytest.skip("solo Postgres")
+    f = db.crea_fronte(conn, "Paper", "2026-10-15", "parole", 7500)
+    db.fronti(conn)
+    db.impegni(conn)
+    assert not conn.in_transazione
+    s = db.avvia_sessione(conn, f, 45)  # durate diverse da 10/90 accettate
+    assert db.sessione_in_corso(conn)["durata_prevista_min"] == 45
+    assert not conn.in_transazione
