@@ -28,4 +28,5 @@ jobs:
       - name: Apri l'app
         env:
           CRUSCOTTO_URL: ${{ secrets.CRUSCOTTO_URL }}
+          PYTHONUNBUFFERED: "1"
         run: python .github/scripts/sveglia_streamlit.py "$CRUSCOTTO_URL"
