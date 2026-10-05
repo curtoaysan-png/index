@@ -104,9 +104,13 @@ Se non hai dati sul PC, in Home c'è il pulsante **Crea i fronti iniziali**.
 ### Da sapere
 - Da quando usi l'app online, usa **solo quella** (anche dal PC, nel browser). La versione avviata
   con `avvia.bat` ha un database separato: i dati non si sincronizzano tra le due.
-- Se l'app online non viene aperta per un po', Streamlit la mette in pausa: alla riapertura
-  compare un pulsante per risvegliarla (circa un minuto). Anche il database Neon si "addormenta"
-  dopo pochi minuti: il primo caricamento è un po' più lento.
+- Se l'app online non viene aperta per circa 12 ore, Streamlit la mette in pausa e la riapertura è
+  lenta. Per evitarlo, il repository contiene un'automazione (GitHub Actions, gratuita) che apre
+  l'app ogni 6 ore: basta indicarle l'indirizzo una volta, in GitHub → **Settings → Secrets and
+  variables → Actions → New repository secret**, nome `CRUSCOTTO_URL`, valore l'indirizzo
+  dell'app (es. `https://nome-app.streamlit.app`, senza `?accesso=...`). Si può lanciare a mano da
+  **Actions → Sveglia Cruscotto → Run workflow**. Anche il database Neon si "addormenta" dopo
+  pochi minuti, ma si risveglia in circa un secondo.
 - Date e orari sono sempre in ora italiana, anche se il server è altrove.
 - Per il backup: **Preferenze e backup → Scarica backup** (un file da tenere dove vuoi, anche su
   OneDrive). Cambiare la password: modifica `CRUSCOTTO_PASSWORD` nei secrets; il vecchio
